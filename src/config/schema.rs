@@ -4479,6 +4479,33 @@ impl Config {
             }
         }
 
+        // Resilience
+        if self.resilience.circuit_breaker_enabled {
+            if self.resilience.circuit_breaker_half_open_max_requests == 0 {
+                anyhow::bail!(
+                    "resilience.circuit_breaker_half_open_max_requests must be >= 1 when circuit breaker is enabled (0 would prevent recovery from open state)"
+                );
+            }
+            if self.resilience.circuit_breaker_failure_threshold == 0 {
+                anyhow::bail!(
+                    "resilience.circuit_breaker_failure_threshold must be >= 1 when circuit breaker is enabled"
+                );
+            }
+        }
+        if self.resilience.rate_limit_enabled {
+            if self.resilience.requests_per_minute == 0 && self.resilience.burst == 0 {
+                anyhow::bail!(
+                    "resilience: requests_per_minute and burst cannot both be 0 when rate limiting is enabled (all requests would be rejected)"
+                );
+            }
+        }
+        if self.resilience.backpressure_enabled && self.resilience.backpressure_max_queue_depth == 0
+        {
+            anyhow::bail!(
+                "resilience.backpressure_max_queue_depth must be >= 1 when backpressure is enabled (0 would shed all non-critical requests)"
+            );
+        }
+
         // Proxy (delegate to existing validation)
         self.proxy.validate()?;
 
