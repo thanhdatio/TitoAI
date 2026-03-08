@@ -8,6 +8,7 @@
 //! - Header sanitization (handled by axum/hyper)
 
 pub mod api;
+pub mod health;
 pub mod sse;
 pub mod static_files;
 pub mod ws;
@@ -655,7 +656,8 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
     // Build router with middleware
     let app = Router::new()
         // ── Existing routes ──
-        .route("/health", get(handle_health))
+        .route("/health", get(health::handle_liveness))
+        .route("/ready", get(health::handle_readiness))
         .route("/metrics", get(handle_metrics))
         .route("/pair", post(handle_pair))
         .route("/webhook", post(handle_webhook))
@@ -714,16 +716,7 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
 // AXUM HANDLERS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// GET /health — always public (no secrets leaked)
-async fn handle_health(State(state): State<AppState>) -> impl IntoResponse {
-    let body = serde_json::json!({
-        "status": "ok",
-        "paired": state.pairing.is_paired(),
-        "require_pairing": state.pairing.require_pairing(),
-        "runtime": crate::health::snapshot_json(),
-    });
-    Json(body)
-}
+// GET /health is now handled by health::handle_liveness in gateway/health.rs
 
 /// Prometheus content type for text exposition format.
 const PROMETHEUS_CONTENT_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8";
