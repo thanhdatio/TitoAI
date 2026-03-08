@@ -45,8 +45,10 @@ pub mod memory_recall;
 pub mod memory_store;
 pub mod model_routing_config;
 pub mod pdf_read;
+pub mod project_intel;
 pub mod proxy_config;
 pub mod pushover;
+pub mod report_templates;
 pub mod schedule;
 pub mod schema;
 pub mod screenshot;
@@ -84,6 +86,7 @@ pub use memory_recall::MemoryRecallTool;
 pub use memory_store::MemoryStoreTool;
 pub use model_routing_config::ModelRoutingConfigTool;
 pub use pdf_read::PdfReadTool;
+pub use project_intel::ProjectIntelTool;
 pub use proxy_config::ProxyConfigTool;
 pub use pushover::PushoverTool;
 pub use schedule::ScheduleTool;
@@ -294,6 +297,14 @@ pub fn all_tools_with_runtime(
             root_config.web_search.brave_api_key.clone(),
             root_config.web_search.max_results,
             root_config.web_search.timeout_secs,
+        )));
+    }
+
+    // Project delivery intelligence
+    if root_config.project_intel.enabled {
+        tool_arcs.push(Arc::new(ProjectIntelTool::new(
+            root_config.project_intel.default_language.clone(),
+            root_config.project_intel.risk_sensitivity.clone(),
         )));
     }
 
