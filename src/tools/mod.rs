@@ -21,6 +21,7 @@ pub mod agents_ipc;
 pub mod apply_patch;
 pub mod auth_profile;
 pub mod bg_run;
+pub mod backup_tool;
 pub mod browser;
 pub mod browser_open;
 pub mod channel_ack_config;
@@ -33,6 +34,7 @@ pub mod cron_remove;
 pub mod cron_run;
 pub mod cron_runs;
 pub mod cron_update;
+pub mod data_management;
 pub mod delegate;
 pub mod delegate_coordination_status;
 pub mod docx_read;
@@ -93,6 +95,7 @@ pub use apply_patch::ApplyPatchTool;
 pub use bg_run::{
     format_bg_result_for_injection, BgJob, BgJobStatus, BgJobStore, BgRunTool, BgStatusTool,
 };
+pub use backup_tool::BackupTool;
 pub use browser::{BrowserTool, ComputerUseConfig};
 pub use browser_open::BrowserOpenTool;
 pub use channel_ack_config::ChannelAckConfigTool;
@@ -104,6 +107,7 @@ pub use cron_remove::CronRemoveTool;
 pub use cron_run::CronRunTool;
 pub use cron_runs::CronRunsTool;
 pub use cron_update::CronUpdateTool;
+pub use data_management::DataManagementTool;
 pub use delegate::DelegateTool;
 pub use delegate_coordination_status::DelegateCoordinationStatusTool;
 pub use docx_read::DocxReadTool;
@@ -608,6 +612,28 @@ pub fn all_tools_with_runtime(
     // Vision tools are always available
     tool_arcs.push(Arc::new(ScreenshotTool::new(security.clone())));
     tool_arcs.push(Arc::new(ImageInfoTool::new(security.clone())));
+
+    // Backup and data management tools.
+    if root_config.backup.enabled {
+        let zeroclaw_dir = root_config
+            .config_path
+            .parent()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| workspace_dir.to_path_buf());
+        tool_arcs.push(Arc::new(BackupTool::new(
+            zeroclaw_dir.clone(),
+            root_config.backup.include_dirs.clone(),
+            root_config.backup.max_keep,
+        )));
+        if root_config.data_retention.enabled {
+            tool_arcs.push(Arc::new(DataManagementTool::new(
+                zeroclaw_dir,
+                root_config.data_retention.retention_days,
+                root_config.data_retention.gdpr_erasure_enabled,
+                root_config.data_retention.erasure_stores.clone(),
+            )));
+        }
+    }
 
     if let Some(key) = composio_key {
         if !key.is_empty() {
