@@ -217,6 +217,10 @@ pub struct Config {
     /// Voice transcription configuration (Whisper API via Groq).
     #[serde(default)]
     pub transcription: TranscriptionConfig,
+
+    /// Knowledge graph configuration (`[knowledge]`).
+    #[serde(default)]
+    pub knowledge: KnowledgeConfig,
 }
 
 /// Named provider profile definition compatible with Codex app-server style config.
@@ -1135,6 +1139,52 @@ impl Default for WebSearchConfig {
             brave_api_key: None,
             max_results: default_web_search_max_results(),
             timeout_secs: default_web_search_timeout_secs(),
+        }
+    }
+}
+
+// ── Knowledge ───────────────────────────────────────────────────
+
+/// Knowledge graph configuration for capturing and reusing expertise.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct KnowledgeConfig {
+    /// Enable the knowledge graph tool. Default: false.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Path to the knowledge graph SQLite database.
+    #[serde(default = "default_knowledge_db_path")]
+    pub db_path: String,
+    /// Maximum number of knowledge nodes. Default: 100000.
+    #[serde(default = "default_knowledge_max_nodes")]
+    pub max_nodes: usize,
+    /// Automatically capture knowledge from conversations. Default: false.
+    #[serde(default)]
+    pub auto_capture: bool,
+    /// Proactively suggest relevant knowledge on queries. Default: true.
+    #[serde(default = "default_true")]
+    pub suggest_on_query: bool,
+    /// Allow searching across workspaces (disabled by default for client data isolation).
+    #[serde(default)]
+    pub cross_workspace_search: bool,
+}
+
+fn default_knowledge_db_path() -> String {
+    "~/.zeroclaw/knowledge.db".into()
+}
+
+fn default_knowledge_max_nodes() -> usize {
+    100_000
+}
+
+impl Default for KnowledgeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            db_path: default_knowledge_db_path(),
+            max_nodes: default_knowledge_max_nodes(),
+            auto_capture: false,
+            suggest_on_query: true,
+            cross_workspace_search: false,
         }
     }
 }
@@ -3629,6 +3679,7 @@ impl Default for Config {
             hardware: HardwareConfig::default(),
             query_classification: QueryClassificationConfig::default(),
             transcription: TranscriptionConfig::default(),
+            knowledge: KnowledgeConfig::default(),
         }
     }
 }
@@ -4380,6 +4431,16 @@ impl Config {
                 anyhow::bail!(
                     "default_model uses ':cloud' with provider 'ollama', but no API key is configured. Set api_key or OLLAMA_API_KEY."
                 );
+            }
+        }
+
+        // Knowledge graph
+        if self.knowledge.enabled {
+            if self.knowledge.max_nodes == 0 {
+                anyhow::bail!("knowledge.max_nodes must be greater than 0");
+            }
+            if self.knowledge.db_path.trim().is_empty() {
+                anyhow::bail!("knowledge.db_path must not be empty");
             }
         }
 
@@ -5161,6 +5222,7 @@ default_temperature = 0.7
             hooks: HooksConfig::default(),
             hardware: HardwareConfig::default(),
             transcription: TranscriptionConfig::default(),
+            knowledge: KnowledgeConfig::default(),
         };
 
         let toml_str = toml::to_string_pretty(&config).unwrap();
@@ -5343,6 +5405,7 @@ tool_dispatcher = "xml"
             hooks: HooksConfig::default(),
             hardware: HardwareConfig::default(),
             transcription: TranscriptionConfig::default(),
+            knowledge: KnowledgeConfig::default(),
         };
 
         config.save().await.unwrap();

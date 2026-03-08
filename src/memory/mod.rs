@@ -3,6 +3,7 @@ pub mod chunker;
 pub mod cli;
 pub mod embeddings;
 pub mod hygiene;
+pub mod knowledge_graph;
 pub mod lucid;
 pub mod markdown;
 pub mod none;
