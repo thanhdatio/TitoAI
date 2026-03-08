@@ -399,6 +399,13 @@ pub struct Config {
     /// WASM plugin engine configuration (`[wasm]` section).
     #[serde(default)]
     pub wasm: WasmConfig,
+    /// Backup configuration (`[backup]`).
+    #[serde(default)]
+    pub backup: BackupConfig,
+
+    /// Data retention and GDPR configuration (`[data_retention]`).
+    #[serde(default)]
+    pub data_retention: DataRetentionConfig,
 }
 
 /// Named provider profile definition compatible with Codex app-server style config.
@@ -3347,6 +3354,108 @@ impl Default for PluginEntryConfig {
         }
     }
 }
+// ── Backup & Data Retention ──────────────────────────────────────────────────
+
+/// Backup configuration (`[backup]` section).
+///
+/// Controls automatic and on-demand backup behavior for the ZeroClaw workspace.
+/// Backups are stored under `~/.zeroclaw/backups/` and each contains a
+/// `manifest.json` with SHA-256 checksums for integrity verification.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BackupConfig {
+    /// Enable backup capabilities. Default: true.
+    #[serde(default = "default_backup_enabled")]
+    pub enabled: bool,
+
+    /// Maximum number of backups to retain during auto-prune. Default: 10.
+    #[serde(default = "default_backup_max_keep")]
+    pub max_keep: usize,
+
+    /// Directories to include in backups (relative to workspace root).
+    /// Default: config, memory, audit, knowledge.
+    #[serde(default = "default_backup_include_dirs")]
+    pub include_dirs: Vec<String>,
+}
+
+fn default_backup_enabled() -> bool {
+    true
+}
+
+fn default_backup_max_keep() -> usize {
+    10
+}
+
+fn default_backup_include_dirs() -> Vec<String> {
+    vec![
+        "config".to_string(),
+        "memory".to_string(),
+        "audit".to_string(),
+        "knowledge".to_string(),
+    ]
+}
+
+impl Default for BackupConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_backup_enabled(),
+            max_keep: default_backup_max_keep(),
+            include_dirs: default_backup_include_dirs(),
+        }
+    }
+}
+
+/// Data retention configuration (`[data_retention]` section).
+///
+/// Controls retention policies, purge schedules, and GDPR erasure behavior.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DataRetentionConfig {
+    /// Enable data retention management. Default: true.
+    #[serde(default = "default_data_retention_enabled")]
+    pub enabled: bool,
+
+    /// Default retention period in days. Data older than this may be purged.
+    /// Default: 90 days.
+    #[serde(default = "default_retention_days")]
+    pub retention_days: u64,
+
+    /// Enable GDPR erasure support. Default: false.
+    #[serde(default)]
+    pub gdpr_erasure_enabled: bool,
+
+    /// Data stores to scan during erasure (e.g. "memory", "audit", "knowledge").
+    /// Default: all known stores.
+    #[serde(default = "default_erasure_stores")]
+    pub erasure_stores: Vec<String>,
+}
+
+fn default_data_retention_enabled() -> bool {
+    true
+}
+
+fn default_retention_days() -> u64 {
+    90
+}
+
+fn default_erasure_stores() -> Vec<String> {
+    vec![
+        "memory".to_string(),
+        "audit".to_string(),
+        "knowledge".to_string(),
+        "conversations".to_string(),
+    ]
+}
+
+impl Default for DataRetentionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_data_retention_enabled(),
+            retention_days: default_retention_days(),
+            gdpr_erasure_enabled: false,
+            erasure_stores: default_erasure_stores(),
+        }
+    }
+}
+
 // ── Autonomy / Security ──────────────────────────────────────────
 
 /// Natural-language behavior for non-CLI approval-management commands.
@@ -6588,6 +6697,8 @@ impl Default for Config {
             mcp: McpConfig::default(),
             model_support_vision: None,
             wasm: WasmConfig::default(),
+            backup: BackupConfig::default(),
+            data_retention: DataRetentionConfig::default(),
         }
     }
 }
@@ -6818,10 +6929,7 @@ pub(crate) async fn persist_active_workspace_config_dir(config_dir: &Path) -> Re
         );
     }
 
-    #[cfg(unix)]
     sync_directory(&default_config_dir).await?;
-    #[cfg(not(unix))]
-    sync_directory(&default_config_dir)?;
     Ok(())
 }
 
@@ -9749,10 +9857,7 @@ impl Config {
                 })?;
         }
 
-        #[cfg(unix)]
         sync_directory(parent_dir).await?;
-        #[cfg(not(unix))]
-        sync_directory(parent_dir)?;
 
         if had_existing_config {
             let _ = fs::remove_file(&backup_path).await;
@@ -9774,7 +9879,7 @@ async fn sync_directory(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn sync_directory(path: &Path) -> Result<()> {
+async fn sync_directory(path: &Path) -> Result<()> {
     let _ = path;
     Ok(())
 }
@@ -10510,6 +10615,8 @@ ws_url = "ws://127.0.0.1:3002"
             mcp: McpConfig::default(),
             model_support_vision: None,
             wasm: WasmConfig::default(),
+            backup: BackupConfig::default(),
+            data_retention: DataRetentionConfig::default(),
         };
 
         let toml_str = toml::to_string_pretty(&config).unwrap();
@@ -10830,10 +10937,7 @@ denied_tools = ["shell"]
         ));
         fs::create_dir_all(&dir).await.unwrap();
 
-        #[cfg(unix)]
         sync_directory(&dir).await.unwrap();
-        #[cfg(not(unix))]
-        sync_directory(&dir).unwrap();
 
         let _ = fs::remove_dir_all(&dir).await;
     }
@@ -10898,6 +11002,8 @@ denied_tools = ["shell"]
             mcp: McpConfig::default(),
             model_support_vision: None,
             wasm: WasmConfig::default(),
+            backup: BackupConfig::default(),
+            data_retention: DataRetentionConfig::default(),
         };
 
         config.save().await.unwrap();
