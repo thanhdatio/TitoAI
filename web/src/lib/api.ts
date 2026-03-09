@@ -224,12 +224,16 @@ export function getIntegrations(): Promise<Integration[]> {
 // ---------------------------------------------------------------------------
 
 export function runDoctor(): Promise<DiagResult[]> {
-    return apiFetch<
-        DiagResult[] | { results: DiagResult[]; summary?: unknown }
-    >("/api/doctor", {
+    return apiFetch<unknown>("/api/doctor", {
         method: "POST",
         body: JSON.stringify({}),
-    }).then((data) => (Array.isArray(data) ? data : data.results));
+    }).then((data) =>
+        unwrapField(
+            data as DiagResult[] | Record<string, DiagResult[]>,
+            "results",
+            true,
+        ),
+    );
 }
 
 // ---------------------------------------------------------------------------
