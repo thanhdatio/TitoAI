@@ -33,7 +33,7 @@ export default function Memory() {
         setLoading(true);
         getMemory(q || undefined, cat || undefined)
             .then((data) => {
-                setEntries(Array.isArray(data) ? data : []);
+                setEntries(data);
                 setError(null);
             })
             .catch((err) => setError(err.message))

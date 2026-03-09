@@ -112,9 +112,18 @@ export async function pair(code: string): Promise<{ token: string }> {
         );
     }
 
-    const data = (await response.json()) as { token: string };
-    setToken(data.token);
-    return data;
+    const data: unknown = await response.json();
+    if (
+        !data ||
+        typeof data !== "object" ||
+        typeof (data as { token?: unknown }).token !== "string" ||
+        !(data as { token: string }).token
+    ) {
+        throw new Error("Invalid pairing response: missing token");
+    }
+    const token = (data as { token: string }).token;
+    setToken(token);
+    return { token };
 }
 
 // ---------------------------------------------------------------------------
