@@ -157,7 +157,7 @@ export function putConfig(toml: string): Promise<void> {
 
 export function getTools(): Promise<ToolSpec[]> {
     return apiFetch<ToolSpec[] | { tools: ToolSpec[] }>("/api/tools").then(
-        (data) => unwrapField(data, "tools"),
+        (data) => unwrapField(data, "tools") ?? [],
     );
 }
 
@@ -166,8 +166,8 @@ export function getTools(): Promise<ToolSpec[]> {
 // ---------------------------------------------------------------------------
 
 export function getCronJobs(): Promise<CronJob[]> {
-    return apiFetch<CronJob[] | { jobs: CronJob[] }>("/api/cron").then((data) =>
-        unwrapField(data, "jobs"),
+    return apiFetch<CronJob[] | { jobs: CronJob[] }>("/api/cron").then(
+        (data) => unwrapField(data, "jobs") ?? [],
     );
 }
 
@@ -200,7 +200,7 @@ export function deleteCronJob(id: string): Promise<void> {
 export function getIntegrations(): Promise<Integration[]> {
     return apiFetch<Integration[] | { integrations: Integration[] }>(
         "/api/integrations",
-    ).then((data) => unwrapField(data, "integrations"));
+    ).then((data) => unwrapField(data, "integrations") ?? []);
 }
 
 // ---------------------------------------------------------------------------
@@ -267,5 +267,5 @@ export function getCost(): Promise<CostSummary> {
 export function getCliTools(): Promise<CliTool[]> {
     return apiFetch<CliTool[] | { cli_tools: CliTool[] }>(
         "/api/cli-tools",
-    ).then((data) => unwrapField(data, "cli_tools"));
+    ).then((data) => unwrapField(data, "cli_tools") ?? []);
 }

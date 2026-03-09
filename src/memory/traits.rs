@@ -52,7 +52,7 @@ impl<'de> serde::Deserialize<'de> for MemoryCategory {
             "core" => Self::Core,
             "daily" => Self::Daily,
             "conversation" => Self::Conversation,
-            other => Self::Custom(other.to_string()),
+            _ => Self::Custom(s),
         })
     }
 }
@@ -135,6 +135,15 @@ mod tests {
         assert_eq!(core, "\"core\"");
         assert_eq!(daily, "\"daily\"");
         assert_eq!(conversation, "\"conversation\"");
+    }
+
+    #[test]
+    fn memory_category_custom_roundtrip() {
+        let custom = MemoryCategory::Custom("project_notes".into());
+        let json = serde_json::to_string(&custom).unwrap();
+        assert_eq!(json, "\"project_notes\"");
+        let parsed: MemoryCategory = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, custom);
     }
 
     #[test]
