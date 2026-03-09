@@ -162,6 +162,10 @@ pub struct Config {
     #[serde(default)]
     pub composio: ComposioConfig,
 
+    /// Microsoft 365 Graph API integration (`[microsoft365]`).
+    #[serde(default)]
+    pub microsoft365: Microsoft365Config,
+
     /// Secrets encryption configuration (`[secrets]`).
     #[serde(default)]
     pub secrets: SecretsConfig,
@@ -880,6 +884,78 @@ impl Default for ComposioConfig {
             enabled: false,
             api_key: None,
             entity_id: default_entity_id(),
+        }
+    }
+}
+
+// ── Microsoft 365 (Graph API integration) ───────────────────────
+
+/// Microsoft 365 integration via Microsoft Graph API (`[microsoft365]` section).
+///
+/// Provides access to Outlook mail, Teams messages, Calendar events,
+/// OneDrive files, and SharePoint search.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Microsoft365Config {
+    /// Enable Microsoft 365 integration
+    #[serde(default, alias = "enable")]
+    pub enabled: bool,
+    /// Azure AD tenant ID
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    /// Azure AD application (client) ID
+    #[serde(default)]
+    pub client_id: Option<String>,
+    /// Azure AD client secret (stored encrypted when secrets.encrypt = true)
+    #[serde(default)]
+    pub client_secret: Option<String>,
+    /// Authentication flow: "client_credentials" or "device_code"
+    #[serde(default = "default_ms365_auth_flow")]
+    pub auth_flow: String,
+    /// OAuth scopes to request
+    #[serde(default = "default_ms365_scopes")]
+    pub scopes: Vec<String>,
+    /// Encrypt the token cache file on disk
+    #[serde(default = "default_true")]
+    pub token_cache_encrypted: bool,
+    /// User principal name or "me" (for delegated flows)
+    #[serde(default)]
+    pub user_id: Option<String>,
+}
+
+fn default_ms365_auth_flow() -> String {
+    "client_credentials".to_string()
+}
+
+fn default_ms365_scopes() -> Vec<String> {
+    vec!["https://graph.microsoft.com/.default".to_string()]
+}
+
+impl std::fmt::Debug for Microsoft365Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Microsoft365Config")
+            .field("enabled", &self.enabled)
+            .field("tenant_id", &self.tenant_id)
+            .field("client_id", &self.client_id)
+            .field("client_secret", &self.client_secret.as_ref().map(|_| "***"))
+            .field("auth_flow", &self.auth_flow)
+            .field("scopes", &self.scopes)
+            .field("token_cache_encrypted", &self.token_cache_encrypted)
+            .field("user_id", &self.user_id)
+            .finish()
+    }
+}
+
+impl Default for Microsoft365Config {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            tenant_id: None,
+            client_id: None,
+            client_secret: None,
+            auth_flow: default_ms365_auth_flow(),
+            scopes: default_ms365_scopes(),
+            token_cache_encrypted: true,
+            user_id: None,
         }
     }
 }
@@ -3614,6 +3690,7 @@ impl Default for Config {
             tunnel: TunnelConfig::default(),
             gateway: GatewayConfig::default(),
             composio: ComposioConfig::default(),
+            microsoft365: Microsoft365Config::default(),
             secrets: SecretsConfig::default(),
             browser: BrowserConfig::default(),
             http_request: HttpRequestConfig::default(),
@@ -4071,6 +4148,11 @@ impl Config {
                 &mut config.composio.api_key,
                 "config.composio.api_key",
             )?;
+            decrypt_optional_secret(
+                &store,
+                &mut config.microsoft365.client_secret,
+                "config.microsoft365.client_secret",
+            )?;
 
             decrypt_optional_secret(
                 &store,
@@ -4379,6 +4461,38 @@ impl Config {
             if !has_ollama_cloud_credential(self.api_key.as_deref()) {
                 anyhow::bail!(
                     "default_model uses ':cloud' with provider 'ollama', but no API key is configured. Set api_key or OLLAMA_API_KEY."
+                );
+            }
+        }
+
+        // Microsoft 365
+        if self.microsoft365.enabled {
+            let tenant = self
+                .microsoft365
+                .tenant_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            if tenant.is_none() {
+                anyhow::bail!(
+                    "microsoft365.tenant_id must not be empty when microsoft365 is enabled"
+                );
+            }
+            let client = self
+                .microsoft365
+                .client_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            if client.is_none() {
+                anyhow::bail!(
+                    "microsoft365.client_id must not be empty when microsoft365 is enabled"
+                );
+            }
+            let flow = self.microsoft365.auth_flow.trim();
+            if flow != "client_credentials" && flow != "device_code" {
+                anyhow::bail!(
+                    "microsoft365.auth_flow must be 'client_credentials' or 'device_code'"
                 );
             }
         }
@@ -4692,6 +4806,11 @@ impl Config {
             &store,
             &mut config_to_save.composio.api_key,
             "config.composio.api_key",
+        )?;
+        encrypt_optional_secret(
+            &store,
+            &mut config_to_save.microsoft365.client_secret,
+            "config.microsoft365.client_secret",
         )?;
 
         encrypt_optional_secret(
@@ -5146,6 +5265,7 @@ default_temperature = 0.7
             tunnel: TunnelConfig::default(),
             gateway: GatewayConfig::default(),
             composio: ComposioConfig::default(),
+            microsoft365: Microsoft365Config::default(),
             secrets: SecretsConfig::default(),
             browser: BrowserConfig::default(),
             http_request: HttpRequestConfig::default(),
@@ -5328,6 +5448,7 @@ tool_dispatcher = "xml"
             tunnel: TunnelConfig::default(),
             gateway: GatewayConfig::default(),
             composio: ComposioConfig::default(),
+            microsoft365: Microsoft365Config::default(),
             secrets: SecretsConfig::default(),
             browser: BrowserConfig::default(),
             http_request: HttpRequestConfig::default(),
