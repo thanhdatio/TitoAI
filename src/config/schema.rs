@@ -2761,6 +2761,9 @@ pub struct TelegramConfig {
     /// Direct messages are always processed.
     #[serde(default)]
     pub mention_only: bool,
+    /// Voice-loop configuration. Disabled by default (opt-in).
+    #[serde(default)]
+    pub voice_loop: crate::channels::voice_loop::VoiceLoopConfig,
 }
 
 impl ChannelConfig for TelegramConfig {
@@ -2814,6 +2817,9 @@ pub struct SlackConfig {
     /// Allowed Slack user IDs. Empty = deny all.
     #[serde(default)]
     pub allowed_users: Vec<String>,
+    /// Voice-loop configuration. Disabled by default (opt-in).
+    #[serde(default)]
+    pub voice_loop: crate::channels::voice_loop::VoiceLoopConfig,
 }
 
 impl ChannelConfig for SlackConfig {
@@ -2986,6 +2992,9 @@ pub struct WhatsAppConfig {
     /// Allowed phone numbers (E.164 format: +1234567890) or "*" for all
     #[serde(default)]
     pub allowed_numbers: Vec<String>,
+    /// Voice-loop configuration. Disabled by default (opt-in).
+    #[serde(default)]
+    pub voice_loop: crate::channels::voice_loop::VoiceLoopConfig,
 }
 
 impl ChannelConfig for WhatsAppConfig {
