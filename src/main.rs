@@ -70,6 +70,7 @@ mod integrations;
 mod memory;
 mod migration;
 mod multimodal;
+mod nodes;
 mod observability;
 mod onboard;
 mod peripherals;

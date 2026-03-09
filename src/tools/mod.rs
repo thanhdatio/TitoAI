@@ -44,6 +44,7 @@ pub mod memory_forget;
 pub mod memory_recall;
 pub mod memory_store;
 pub mod model_routing_config;
+pub mod node_tool;
 pub mod pdf_read;
 pub mod proxy_config;
 pub mod pushover;
@@ -83,6 +84,7 @@ pub use memory_forget::MemoryForgetTool;
 pub use memory_recall::MemoryRecallTool;
 pub use memory_store::MemoryStoreTool;
 pub use model_routing_config::ModelRoutingConfigTool;
+pub use node_tool::NodeTool;
 pub use pdf_read::PdfReadTool;
 pub use proxy_config::ProxyConfigTool;
 pub use pushover::PushoverTool;
@@ -343,6 +345,13 @@ pub fn all_tools_with_runtime(
         .with_parent_tools(parent_tools)
         .with_multimodal_config(root_config.multimodal.clone());
         tool_arcs.push(Arc::new(delegate_tool));
+    }
+
+    // Register NodeTool when multi-machine node system is enabled.
+    if root_config.node_system.enabled {
+        let node_registry = Arc::new(crate::nodes::NodeRegistry::new(&root_config.node_system));
+        let node_client = Arc::new(crate::nodes::NodeClient::new(node_registry));
+        tool_arcs.push(Arc::new(NodeTool::new(node_client, security.clone())));
     }
 
     boxed_registry_from_arcs(tool_arcs)
