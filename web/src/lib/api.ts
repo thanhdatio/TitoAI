@@ -64,17 +64,33 @@ export async function apiFetch<T = unknown>(
     return response.json() as Promise<T>;
 }
 
-function unwrapField<T>(value: T | Record<string, T>, key: string): T {
+function unwrapField<T>(value: T | Record<string, T>, key: string): T;
+function unwrapField<T>(
+    value: T[] | Record<string, T[]>,
+    key: string,
+    expectArray: true,
+): T[];
+function unwrapField<T>(
+    value: unknown,
+    key: string,
+    expectArray?: boolean,
+): T | T[] {
     if (
         value !== null &&
         typeof value === "object" &&
         !Array.isArray(value) &&
-        key in value
+        key in (value as Record<string, unknown>)
     ) {
-        const unwrapped = (value as Record<string, T | undefined>)[key];
+        const unwrapped = (value as Record<string, unknown>)[key];
         if (unwrapped !== undefined) {
-            return unwrapped;
+            if (expectArray) {
+                return Array.isArray(unwrapped) ? (unwrapped as T[]) : [];
+            }
+            return unwrapped as T;
         }
+    }
+    if (expectArray) {
+        return Array.isArray(value) ? (value as T[]) : [];
     }
     return value as T;
 }
@@ -157,7 +173,7 @@ export function putConfig(toml: string): Promise<void> {
 
 export function getTools(): Promise<ToolSpec[]> {
     return apiFetch<ToolSpec[] | { tools: ToolSpec[] }>("/api/tools").then(
-        (data) => unwrapField(data, "tools") ?? [],
+        (data) => unwrapField(data, "tools", true),
     );
 }
 
@@ -166,8 +182,8 @@ export function getTools(): Promise<ToolSpec[]> {
 // ---------------------------------------------------------------------------
 
 export function getCronJobs(): Promise<CronJob[]> {
-    return apiFetch<CronJob[] | { jobs: CronJob[] }>("/api/cron").then(
-        (data) => unwrapField(data, "jobs") ?? [],
+    return apiFetch<CronJob[] | { jobs: CronJob[] }>("/api/cron").then((data) =>
+        unwrapField(data, "jobs", true),
     );
 }
 
@@ -200,7 +216,7 @@ export function deleteCronJob(id: string): Promise<void> {
 export function getIntegrations(): Promise<Integration[]> {
     return apiFetch<Integration[] | { integrations: Integration[] }>(
         "/api/integrations",
-    ).then((data) => unwrapField(data, "integrations") ?? []);
+    ).then((data) => unwrapField(data, "integrations", true));
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +246,7 @@ export function getMemory(
     const qs = params.toString();
     return apiFetch<MemoryEntry[] | { entries: MemoryEntry[] }>(
         `/api/memory${qs ? `?${qs}` : ""}`,
-    ).then((data) => unwrapField(data, "entries") ?? []);
+    ).then((data) => unwrapField(data, "entries", true));
 }
 
 export function storeMemory(
@@ -267,5 +283,5 @@ export function getCost(): Promise<CostSummary> {
 export function getCliTools(): Promise<CliTool[]> {
     return apiFetch<CliTool[] | { cli_tools: CliTool[] }>(
         "/api/cli-tools",
-    ).then((data) => unwrapField(data, "cli_tools") ?? []);
+    ).then((data) => unwrapField(data, "cli_tools", true));
 }

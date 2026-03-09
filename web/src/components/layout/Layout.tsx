@@ -1,22 +1,28 @@
-import { Outlet } from 'react-router-dom';
-import Sidebar from '@/components/layout/Sidebar';
-import Header from '@/components/layout/Header';
+import { Outlet, useLocation } from "react-router-dom";
+import Sidebar from "@/components/layout/Sidebar";
+import Header from "@/components/layout/Header";
+import { ErrorBoundary } from "@/App";
 
 export default function Layout() {
-  return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      {/* Fixed sidebar */}
-      <Sidebar />
+    const { pathname } = useLocation();
 
-      {/* Main area offset by sidebar width (240px / w-60) */}
-      <div className="ml-60 flex flex-col min-h-screen">
-        <Header />
+    return (
+        <div className="min-h-screen bg-gray-950 text-white">
+            {/* Fixed sidebar */}
+            <Sidebar />
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
-          <Outlet />
-        </main>
-      </div>
-    </div>
-  );
+            {/* Main area offset by sidebar width (240px / w-60) */}
+            <div className="ml-60 flex flex-col min-h-screen">
+                <Header />
+
+                {/* Page content — ErrorBoundary keyed by pathname so the nav shell
+            survives a page crash and the boundary resets on route change */}
+                <main className="flex-1 overflow-y-auto">
+                    <ErrorBoundary key={pathname}>
+                        <Outlet />
+                    </ErrorBoundary>
+                </main>
+            </div>
+        </div>
+    );
 }

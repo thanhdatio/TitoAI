@@ -43,7 +43,7 @@ interface ErrorBoundaryState {
     error: Error | null;
 }
 
-class ErrorBoundary extends Component<
+export class ErrorBoundary extends Component<
     { children: ReactNode },
     ErrorBoundaryState
 > {
@@ -63,8 +63,8 @@ class ErrorBoundary extends Component<
     render() {
         if (this.state.error) {
             return (
-                <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
-                    <div className="bg-gray-900 border border-red-700 rounded-xl p-8 w-full max-w-lg">
+                <div className="p-6">
+                    <div className="bg-gray-900 border border-red-700 rounded-xl p-6 w-full max-w-lg">
                         <h2 className="text-lg font-semibold text-red-400 mb-2">
                             Something went wrong
                         </h2>
@@ -184,26 +184,21 @@ function AppContent() {
 
     return (
         <LocaleContext.Provider value={{ locale, setAppLocale }}>
-            <ErrorBoundary>
-                <Routes>
-                    <Route element={<Layout />}>
-                        <Route path="/" element={<Dashboard />} />
-                        <Route path="/agent" element={<AgentChat />} />
-                        <Route path="/tools" element={<Tools />} />
-                        <Route path="/cron" element={<Cron />} />
-                        <Route
-                            path="/integrations"
-                            element={<Integrations />}
-                        />
-                        <Route path="/memory" element={<Memory />} />
-                        <Route path="/config" element={<Config />} />
-                        <Route path="/cost" element={<Cost />} />
-                        <Route path="/logs" element={<Logs />} />
-                        <Route path="/doctor" element={<Doctor />} />
-                        <Route path="*" element={<Navigate to="/" replace />} />
-                    </Route>
-                </Routes>
-            </ErrorBoundary>
+            <Routes>
+                <Route element={<Layout />}>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/agent" element={<AgentChat />} />
+                    <Route path="/tools" element={<Tools />} />
+                    <Route path="/cron" element={<Cron />} />
+                    <Route path="/integrations" element={<Integrations />} />
+                    <Route path="/memory" element={<Memory />} />
+                    <Route path="/config" element={<Config />} />
+                    <Route path="/cost" element={<Cost />} />
+                    <Route path="/logs" element={<Logs />} />
+                    <Route path="/doctor" element={<Doctor />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+            </Routes>
         </LocaleContext.Provider>
     );
 }
