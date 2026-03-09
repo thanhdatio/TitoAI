@@ -1,5 +1,6 @@
 pub mod schema;
 pub mod traits;
+pub mod workspace;
 
 #[allow(unused_imports)]
 pub use schema::{
@@ -16,7 +17,7 @@ pub use schema::{
     RuntimeConfig, SandboxBackend, SandboxConfig, SchedulerConfig, SecretsConfig, SecurityConfig,
     SkillsConfig, SkillsPromptInjectionMode, SlackConfig, StorageConfig, StorageProviderConfig,
     StorageProviderSection, StreamMode, TelegramConfig, TranscriptionConfig, TunnelConfig,
-    WebFetchConfig, WebSearchConfig, WebhookConfig,
+    WebFetchConfig, WebSearchConfig, WebhookConfig, WorkspaceConfig,
 };
 
 pub fn name_and_presence<T: traits::ChannelConfig>(channel: &Option<T>) -> (&'static str, bool) {
