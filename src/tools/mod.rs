@@ -54,6 +54,7 @@ pub mod shell;
 pub mod traits;
 pub mod web_fetch;
 pub mod web_search_tool;
+pub mod workspace_tool;
 
 pub use browser::{BrowserTool, ComputerUseConfig};
 pub use browser_open::BrowserOpenTool;
@@ -96,6 +97,7 @@ pub use traits::Tool;
 pub use traits::{ToolResult, ToolSpec};
 pub use web_fetch::WebFetchTool;
 pub use web_search_tool::WebSearchTool;
+pub use workspace_tool::WorkspaceTool;
 
 use crate::config::{Config, DelegateAgentConfig};
 use crate::memory::Memory;
@@ -343,6 +345,24 @@ pub fn all_tools_with_runtime(
         .with_parent_tools(parent_tools)
         .with_multimodal_config(root_config.multimodal.clone());
         tool_arcs.push(Arc::new(delegate_tool));
+    }
+
+
+    // Workspace management tool (conditionally registered when workspace isolation is enabled)
+    if root_config.workspace.enabled {
+        let workspaces_dir = if root_config.workspace.workspaces_dir.starts_with("~/") {
+            let home = directories::UserDirs::new()
+                .map(|u| u.home_dir().to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            home.join(&root_config.workspace.workspaces_dir[2..])
+        } else {
+            std::path::PathBuf::from(&root_config.workspace.workspaces_dir)
+        };
+        let ws_manager = crate::config::workspace::WorkspaceManager::new(workspaces_dir);
+        tool_arcs.push(Arc::new(WorkspaceTool::new(
+            Arc::new(tokio::sync::RwLock::new(ws_manager)),
+            security.clone(),
+        )));
     }
 
     boxed_registry_from_arcs(tool_arcs)
