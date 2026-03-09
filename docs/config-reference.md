@@ -82,12 +82,14 @@ api_key = "sk-profile-key"
 | `runtime_trace_mode` | `none` | Runtime trace storage mode: `none`, `rolling`, or `full` |
 | `runtime_trace_path` | `state/runtime-trace.jsonl` | Runtime trace JSONL path (relative to workspace unless absolute) |
 | `runtime_trace_max_entries` | `200` | Maximum retained events when `runtime_trace_mode = "rolling"` |
+| `session_report_dir` | _(none)_ | Directory to write per-session JSON reports. If unset, no reports are written. |
 
 Notes:
 
 - `backend = "otel"` uses OTLP HTTP export with a blocking exporter client so spans and metrics can be emitted safely from non-Tokio contexts.
 - Alias values `opentelemetry` and `otlp` map to the same OTel backend.
 - Runtime traces are intended for debugging tool-call failures and malformed model tool payloads. They can contain model output text, so keep this disabled by default on shared hosts.
+- Session reports capture per-turn LLM and tool call data (prompts, responses, tokens, durations) in a structured JSON file per session. Each file is named `session_<timestamp>_<id>.json`. Reports are written only on successful session completion. Enable only for debugging or analysis — reports contain full tool output text.
 - Query runtime traces with:
   - `zeroclaw doctor traces --limit 20`
   - `zeroclaw doctor traces --event tool_call_result --contains \"error\"`

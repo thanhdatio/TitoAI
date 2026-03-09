@@ -78,8 +78,8 @@ pub use whatsapp_web::WhatsAppWebChannel;
 
 use crate::agent::loop_::{
     build_shell_policy_instructions, build_tool_instructions_from_specs,
-    run_tool_call_loop_with_non_cli_approval_context, scrub_credentials, NonCliApprovalContext,
-    NonCliApprovalPrompt, SafetyHeartbeatConfig,
+    run_tool_call_loop_with_non_cli_approval_context, scope_session_report_dir, scrub_credentials,
+    NonCliApprovalContext, NonCliApprovalPrompt, SafetyHeartbeatConfig,
 };
 use crate::agent::session::{resolve_session_id, shared_session_manager, Session, SessionManager};
 use crate::approval::{ApprovalManager, ApprovalResponse, PendingApprovalError};
@@ -259,6 +259,8 @@ struct ChannelRuntimeDefaults {
     multimodal: crate::config::MultimodalConfig,
     query_classification: crate::config::QueryClassificationConfig,
     model_routes: Vec<crate::config::ModelRouteConfig>,
+    configured_providers: Vec<String>,
+    session_report_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1155,6 +1157,8 @@ fn runtime_defaults_from_config(config: &Config) -> ChannelRuntimeDefaults {
         multimodal: config.multimodal.clone(),
         query_classification: config.query_classification.clone(),
         model_routes: config.model_routes.clone(),
+        configured_providers: build_configured_providers(config),
+        session_report_dir: config.observability.session_report_dir.clone(),
     }
 }
 
@@ -1221,6 +1225,12 @@ fn runtime_defaults_snapshot(ctx: &ChannelRuntimeContext) -> ChannelRuntimeDefau
         multimodal: ctx.multimodal.clone(),
         query_classification: ctx.query_classification.clone(),
         model_routes: ctx.model_routes.clone(),
+        configured_providers: ctx
+            .configured_providers
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone(),
+        session_report_dir: None,
     }
 }
 
@@ -4087,7 +4097,9 @@ If this input is legitimate, rephrase the request and avoid instruction-override
         () = cancellation_token.cancelled() => LlmExecutionResult::Cancelled,
         result = tokio::time::timeout(
             Duration::from_secs(timeout_budget_secs),
-            crate::agent::loop_::scope_cost_enforcement_context(
+            scope_session_report_dir(
+                runtime_defaults.session_report_dir.clone(),
+                crate::agent::loop_::scope_cost_enforcement_context(
                 cost_enforcement_context,
                 run_tool_call_loop_with_non_cli_approval_context(
                     active_provider.as_ref(),
@@ -4111,6 +4123,7 @@ If this input is legitimate, rephrase the request and avoid instruction-override
                     ctx.safety_heartbeat.clone(),
                     runtime_canary_tokens_snapshot(ctx.as_ref()),
                 ),
+            ),
             ),
         ) => LlmExecutionResult::Completed(result),
     };
@@ -9921,6 +9934,8 @@ BTC is currently around $65,000 based on latest tool output."#
                         multimodal: crate::config::MultimodalConfig::default(),
                         query_classification: crate::config::QueryClassificationConfig::default(),
                         model_routes: Vec::new(),
+                        configured_providers: Vec::new(),
+                        session_report_dir: None,
                     },
                     perplexity_filter: crate::config::PerplexityFilterConfig::default(),
                     outbound_leak_guard: crate::config::OutboundLeakGuardConfig::default(),

@@ -657,6 +657,7 @@ pub fn all_tools_with_runtime(
             security.clone(),
             provider_runtime_options.clone(),
         )
+        .with_reliability(root_config.reliability.clone())
         .with_parent_tools(parent_tools.clone())
         .with_multimodal_config(root_config.multimodal.clone())
         .with_load_tracker(load_tracker.clone())
@@ -1263,6 +1264,8 @@ mod tests {
                 agentic: false,
                 allowed_tools: Vec::new(),
                 max_iterations: 10,
+                provider_retries: None,
+                fallback_providers: vec![],
             },
         );
 
@@ -1351,6 +1354,8 @@ mod tests {
                 agentic: false,
                 allowed_tools: Vec::new(),
                 max_iterations: 10,
+                provider_retries: None,
+                fallback_providers: vec![],
             },
         );
 
@@ -1406,6 +1411,8 @@ mod tests {
                 agentic: false,
                 allowed_tools: Vec::new(),
                 max_iterations: 10,
+                provider_retries: None,
+                fallback_providers: vec![],
             },
         );
 
@@ -1461,6 +1468,8 @@ mod tests {
                 agentic: false,
                 allowed_tools: Vec::new(),
                 max_iterations: 10,
+                provider_retries: None,
+                fallback_providers: vec![],
             },
         );
 

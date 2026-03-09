@@ -863,6 +863,8 @@ fn parse_source_agent(raw_agent: &Value) -> Option<DelegateAgentConfig> {
         agentic: obj.get("agentic").and_then(Value::as_bool).unwrap_or(false),
         allowed_tools,
         max_iterations: find_usize(obj, &["max_iterations", "maxIterations"]).unwrap_or(10),
+        provider_retries: None,
+        fallback_providers: vec![],
     })
 }
 
@@ -1496,6 +1498,8 @@ mod tests {
                 agentic: false,
                 allowed_tools: vec!["shell".to_string()],
                 max_iterations: 10,
+                provider_retries: None,
+                fallback_providers: vec![],
             },
         );
         config.save().await.unwrap();

@@ -316,6 +316,22 @@ impl Agent {
             config.api_key.as_deref(),
             config,
         );
+
+        // Register skill tools as native function-calling tools
+        let skills = crate::skills::load_skills_with_config(&config.workspace_dir, config);
+        let skill_tools = crate::skills::create_skill_tools(&skills, Arc::clone(&security));
+        if !skill_tools.is_empty() {
+            tracing::info!("Registered {} native skill tool(s)", skill_tools.len());
+            tools.extend(skill_tools);
+        }
+
+        let (tools, _bg_job_store) = tools::add_bg_tools(tools);
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name()).collect();
+        tracing::info!(
+            count = tools.len(),
+            "Agent tools after add_bg_tools: {:?}",
+            tool_names
+        );
         let (tools, tool_filter_report) = tools::filter_primary_agent_tools(
             tools,
             &config.agent.allowed_tools,

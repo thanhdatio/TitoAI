@@ -1,7 +1,7 @@
 use super::parsing::ParsedToolCall;
 use super::{scrub_credentials, ToolLoopCancelled};
 use crate::approval::ApprovalManager;
-use crate::observability::{Observer, ObserverEvent};
+use crate::observability::{session_recorder::SessionRecorder, Observer, ObserverEvent};
 use crate::tools::Tool;
 use anyhow::Result;
 use std::time::{Duration, Instant};
@@ -16,10 +16,20 @@ async fn execute_one_tool(
     tools_registry: &[Box<dyn Tool>],
     observer: &dyn Observer,
     cancellation_token: Option<&CancellationToken>,
+    session_recorder: Option<&SessionRecorder>,
 ) -> Result<ToolExecutionOutcome> {
     observer.record_event(&ObserverEvent::ToolCallStart {
         tool: call_name.to_string(),
     });
+    let args_preview = {
+        let s = call_arguments.to_string();
+        if s.len() > 400 {
+            format!("{}…", &s[..400])
+        } else {
+            s
+        }
+    };
+    tracing::info!(tool = %call_name, args = %args_preview, "tool.invoke");
     let start = Instant::now();
 
     let Some(tool) = find_tool(tools_registry, call_name) else {
@@ -38,6 +48,11 @@ async fn execute_one_tool(
         });
     };
 
+    let args_for_record = if session_recorder.is_some() {
+        Some(call_arguments.clone())
+    } else {
+        None
+    };
     let tool_future = tool.execute(call_arguments);
     let tool_result = if let Some(token) = cancellation_token {
         tokio::select! {
@@ -56,19 +71,41 @@ async fn execute_one_tool(
                 duration,
                 success: r.success,
             });
+            let out_preview: String = scrub_credentials(&r.output).chars().take(400).collect();
+            tracing::info!(tool = %call_name, ok = r.success, ms = %duration.as_millis(), out = %out_preview, "tool.done");
             if r.success {
+                let scrubbed_output = scrub_credentials(&r.output);
+                if let Some(rec) = session_recorder {
+                    rec.record_tool_call(
+                        call_name,
+                        args_for_record.as_ref().unwrap_or(&serde_json::Value::Null),
+                        &scrubbed_output,
+                        true,
+                        duration.as_millis() as u64,
+                    );
+                }
                 Ok(ToolExecutionOutcome {
-                    output: scrub_credentials(&r.output),
+                    output: scrubbed_output,
                     success: true,
                     error_reason: None,
                     duration,
                 })
             } else {
                 let reason = r.error.unwrap_or(r.output);
+                let scrubbed_reason = scrub_credentials(&reason);
+                if let Some(rec) = session_recorder {
+                    rec.record_tool_call(
+                        call_name,
+                        args_for_record.as_ref().unwrap_or(&serde_json::Value::Null),
+                        &scrubbed_reason,
+                        false,
+                        duration.as_millis() as u64,
+                    );
+                }
                 Ok(ToolExecutionOutcome {
                     output: format!("Error: {reason}"),
                     success: false,
-                    error_reason: Some(scrub_credentials(&reason)),
+                    error_reason: Some(scrubbed_reason),
                     duration,
                 })
             }
@@ -80,11 +117,22 @@ async fn execute_one_tool(
                 duration,
                 success: false,
             });
+            tracing::info!(tool = %call_name, ok = false, ms = %duration.as_millis(), "tool.err");
             let reason = format!("Error executing {call_name}: {e}");
+            let scrubbed_reason = scrub_credentials(&reason);
+            if let Some(rec) = session_recorder {
+                rec.record_tool_call(
+                    call_name,
+                    args_for_record.as_ref().unwrap_or(&serde_json::Value::Null),
+                    &scrubbed_reason,
+                    false,
+                    duration.as_millis() as u64,
+                );
+            }
             Ok(ToolExecutionOutcome {
-                output: reason.clone(),
+                output: reason,
                 success: false,
-                error_reason: Some(scrub_credentials(&reason)),
+                error_reason: Some(scrubbed_reason),
                 duration,
             })
         }
@@ -125,6 +173,7 @@ pub(super) async fn execute_tools_parallel(
     tools_registry: &[Box<dyn Tool>],
     observer: &dyn Observer,
     cancellation_token: Option<&CancellationToken>,
+    session_recorder: Option<&SessionRecorder>,
 ) -> Result<Vec<ToolExecutionOutcome>> {
     let futures: Vec<_> = tool_calls
         .iter()
@@ -135,6 +184,7 @@ pub(super) async fn execute_tools_parallel(
                 tools_registry,
                 observer,
                 cancellation_token,
+                session_recorder,
             )
         })
         .collect();
@@ -148,6 +198,7 @@ pub(super) async fn execute_tools_sequential(
     tools_registry: &[Box<dyn Tool>],
     observer: &dyn Observer,
     cancellation_token: Option<&CancellationToken>,
+    session_recorder: Option<&SessionRecorder>,
 ) -> Result<Vec<ToolExecutionOutcome>> {
     let mut outcomes = Vec::with_capacity(tool_calls.len());
 
@@ -159,6 +210,7 @@ pub(super) async fn execute_tools_sequential(
                 tools_registry,
                 observer,
                 cancellation_token,
+                session_recorder,
             )
             .await?,
         );

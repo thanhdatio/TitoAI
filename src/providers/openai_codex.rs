@@ -9,7 +9,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::time::timeout;
 use tokio_tungstenite::{
     connect_async,
@@ -34,6 +34,7 @@ const DEFAULT_CODEX_INSTRUCTIONS: &str =
 const CODEX_WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 const CODEX_WS_SEND_TIMEOUT: Duration = Duration::from_secs(15);
 const CODEX_WS_READ_TIMEOUT: Duration = Duration::from_secs(60);
+const CODEX_SSE_READ_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CodexTransport {
@@ -647,7 +648,14 @@ fn extract_stream_error_message(event: &Value) -> Option<String> {
 }
 
 async fn decode_responses_body(response: reqwest::Response) -> anyhow::Result<String> {
-    let body = response.text().await?;
+    let body = tokio::time::timeout(CODEX_SSE_READ_TIMEOUT, response.text())
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "OpenAI Codex SSE response read timed out after {}s",
+                CODEX_SSE_READ_TIMEOUT.as_secs()
+            )
+        })??;
 
     if let Some(text) = parse_sse_text(&body)? {
         return Ok(text);
@@ -804,9 +812,20 @@ impl OpenAiCodexProvider {
         let mut delta_accumulator = String::new();
         let mut fallback_text: Option<String> = None;
         let mut timed_out = false;
+        // Wall-clock deadline: Ping/Pong frames must not reset the overall timeout.
+        let ws_deadline = Instant::now() + CODEX_WS_READ_TIMEOUT;
 
         loop {
-            let frame = match timeout(CODEX_WS_READ_TIMEOUT, ws_stream.next()).await {
+            let remaining = ws_deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                let _ = ws_stream.close(None).await;
+                if saw_delta || fallback_text.is_some() {
+                    timed_out = true;
+                    break;
+                }
+                return Err(websocket_idle_timeout_error(false));
+            }
+            let frame = match timeout(remaining, ws_stream.next()).await {
                 Ok(frame) => frame,
                 Err(_) => {
                     let _ = ws_stream.close(None).await;

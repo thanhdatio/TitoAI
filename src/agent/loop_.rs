@@ -369,6 +369,7 @@ tokio::task_local! {
     static SAFETY_HEARTBEAT_CONFIG: Option<SafetyHeartbeatConfig>;
     static TOOL_LOOP_PROGRESS_MODE: ProgressMode;
     static TOOL_LOOP_COST_ENFORCEMENT_CONTEXT: Option<CostEnforcementContext>;
+    static TOOL_LOOP_SESSION_REPORT_DIR: Option<String>;
 }
 
 /// Configuration for periodic safety-constraint re-injection (heartbeat).
@@ -428,6 +429,13 @@ where
     TOOL_LOOP_COST_ENFORCEMENT_CONTEXT
         .scope(context, future)
         .await
+}
+
+pub(crate) async fn scope_session_report_dir<F>(dir: Option<String>, future: F) -> F::Output
+where
+    F: Future,
+{
+    TOOL_LOOP_SESSION_REPORT_DIR.scope(dir, future).await
 }
 
 fn should_inject_safety_heartbeat(counter: usize, interval: usize) -> bool {
@@ -1253,6 +1261,32 @@ pub async fn run_tool_call_loop(
         );
     }
 
+    // ── Session recorder (Place C): init if session_report_dir is configured ──
+    let session_report_dir = TOOL_LOOP_SESSION_REPORT_DIR
+        .try_with(|d| d.clone())
+        .ok()
+        .flatten();
+    let session_start = Instant::now();
+    let session_recorder: Option<observability::session_recorder::SessionRecorder> =
+        session_report_dir.as_deref().map(|_| {
+            let user_query = history
+                .iter()
+                .find(|m| m.role == "user")
+                .map(|m| m.content.chars().take(500).collect::<String>())
+                .unwrap_or_default();
+            observability::session_recorder::SessionRecorder::new(
+                observability::session_recorder::SessionData {
+                    session_id: turn_id.clone(),
+                    start_time: chrono::Utc::now().to_rfc3339(),
+                    channel: channel_name.to_string(),
+                    provider: provider_name.to_string(),
+                    model: active_model.clone(),
+                    user_query,
+                    ..Default::default()
+                },
+            )
+        });
+
     for iteration in 0..max_iterations {
         if cancellation_token
             .as_ref()
@@ -1480,6 +1514,26 @@ pub async fn run_tool_call_loop(
             }
         }
 
+        // Place D: record prompt for session report
+        if let Some(ref rec) = session_recorder {
+            rec.init_turn(iteration);
+            let prompt_preview: String = request_messages
+                .iter()
+                .rev()
+                .find(|m| m.role == "user")
+                .map(|m| m.content.chars().take(500).collect())
+                .unwrap_or_default();
+            rec.record_prompt(iteration, &prompt_preview);
+        }
+        if let Some(last_user_content) = request_messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.as_str())
+        {
+            let preview: String = last_user_content.chars().take(300).collect();
+            tracing::info!(turn = %iteration, msg = %preview, "llm.prompt");
+        }
         observer.record_event(&ObserverEvent::LlmRequest {
             provider: provider_name.to_string(),
             model: active_model.clone(),
@@ -1719,6 +1773,21 @@ pub async fn run_tool_call_loop(
                     input_tokens: resp_input_tokens,
                     output_tokens: resp_output_tokens,
                 });
+                {
+                    let preview: String = response_text.chars().take(300).collect();
+                    tracing::info!(turn = %iteration, reply = %preview, "llm.reply");
+                }
+
+                // Place E: record LLM response for session report
+                if let Some(ref rec) = session_recorder {
+                    rec.record_llm_response(
+                        iteration,
+                        &response_text.chars().take(500).collect::<String>(),
+                        resp_input_tokens,
+                        resp_output_tokens,
+                        llm_started_at.elapsed().as_millis() as u64,
+                    );
+                }
 
                 // First try native structured tool calls (OpenAI-format).
                 // Fall back to text-based parsing (XML tags, markdown blocks,
@@ -1896,6 +1965,14 @@ pub async fn run_tool_call_loop(
             }
         }
 
+        // Place F: record selected tools for session report
+        if let Some(ref rec) = session_recorder {
+            if !tool_calls.is_empty() {
+                let tool_names: Vec<&str> = tool_calls.iter().map(|c| c.name.as_str()).collect();
+                rec.record_selected_tools(iteration, &tool_names);
+            }
+        }
+
         if tool_calls.is_empty() {
             let missing_tool_call_signal =
                 parse_issue_detected || looks_like_deferred_action_without_tool_call(&display_text);
@@ -2000,6 +2077,12 @@ pub async fn run_tool_call_loop(
                 }
             }
             history.push(ChatMessage::assistant(response_text.clone()));
+            // Place G: finalize session report on successful completion
+            if let Some(ref rec) = session_recorder {
+                if let Some(ref dir_str) = session_report_dir {
+                    rec.finalize_and_write(std::path::Path::new(dir_str), session_start);
+                }
+            }
             return Ok(display_text);
         }
 
@@ -2322,6 +2405,7 @@ pub async fn run_tool_call_loop(
                 tools_registry,
                 observer,
                 cancellation_token.as_ref(),
+                session_recorder.as_ref(),
             )
             .await?
         } else {
@@ -2330,6 +2414,7 @@ pub async fn run_tool_call_loop(
                 tools_registry,
                 observer,
                 cancellation_token.as_ref(),
+                session_recorder.as_ref(),
             )
             .await?
         };
@@ -2986,29 +3071,32 @@ pub async fn run(
         };
         let response = scope_cost_enforcement_context(
             cost_enforcement_context.clone(),
-            SAFETY_HEARTBEAT_CONFIG.scope(
-                hb_cfg,
-                LOOP_DETECTION_CONFIG.scope(
-                    ld_cfg,
-                    TOOL_LOOP_CANARY_TOKENS_ENABLED.scope(
-                        config.security.canary_tokens,
-                        run_tool_call_loop(
-                            provider.as_ref(),
-                            &mut history,
-                            &tools_registry,
-                            observer.as_ref(),
-                            provider_name,
-                            &model_name,
-                            temperature,
-                            false,
-                            approval_manager.as_ref(),
-                            channel_name,
-                            &config.multimodal,
-                            config.agent.max_tool_iterations,
-                            None,
-                            None,
-                            effective_hooks,
-                            &[],
+            TOOL_LOOP_SESSION_REPORT_DIR.scope(
+                config.observability.session_report_dir.clone(),
+                SAFETY_HEARTBEAT_CONFIG.scope(
+                    hb_cfg,
+                    LOOP_DETECTION_CONFIG.scope(
+                        ld_cfg,
+                        TOOL_LOOP_CANARY_TOKENS_ENABLED.scope(
+                            config.security.canary_tokens,
+                            run_tool_call_loop(
+                                provider.as_ref(),
+                                &mut history,
+                                &tools_registry,
+                                observer.as_ref(),
+                                provider_name,
+                                &model_name,
+                                temperature,
+                                false,
+                                approval_manager.as_ref(),
+                                channel_name,
+                                &config.multimodal,
+                                config.agent.max_tool_iterations,
+                                None,
+                                None,
+                                effective_hooks,
+                                &[],
+                            ),
                         ),
                     ),
                 ),
@@ -3215,29 +3303,32 @@ pub async fn run(
             };
             let response = match scope_cost_enforcement_context(
                 cost_enforcement_context.clone(),
-                SAFETY_HEARTBEAT_CONFIG.scope(
-                    hb_cfg,
-                    LOOP_DETECTION_CONFIG.scope(
-                        ld_cfg,
-                        TOOL_LOOP_CANARY_TOKENS_ENABLED.scope(
-                            config.security.canary_tokens,
-                            run_tool_call_loop(
-                                provider.as_ref(),
-                                &mut history,
-                                &tools_registry,
-                                observer.as_ref(),
-                                provider_name,
-                                &model_name,
-                                temperature,
-                                false,
-                                approval_manager.as_ref(),
-                                channel_name,
-                                &config.multimodal,
-                                config.agent.max_tool_iterations,
-                                None,
-                                None,
-                                effective_hooks,
-                                &[],
+                TOOL_LOOP_SESSION_REPORT_DIR.scope(
+                    config.observability.session_report_dir.clone(),
+                    SAFETY_HEARTBEAT_CONFIG.scope(
+                        hb_cfg,
+                        LOOP_DETECTION_CONFIG.scope(
+                            ld_cfg,
+                            TOOL_LOOP_CANARY_TOKENS_ENABLED.scope(
+                                config.security.canary_tokens,
+                                run_tool_call_loop(
+                                    provider.as_ref(),
+                                    &mut history,
+                                    &tools_registry,
+                                    observer.as_ref(),
+                                    provider_name,
+                                    &model_name,
+                                    temperature,
+                                    false,
+                                    approval_manager.as_ref(),
+                                    channel_name,
+                                    &config.multimodal,
+                                    config.agent.max_tool_iterations,
+                                    None,
+                                    None,
+                                    effective_hooks,
+                                    &[],
+                                ),
                             ),
                         ),
                     ),
