@@ -16,3 +16,7 @@
 
 - Provider ID 与环境变量名称保持英文。
 - 规范与行为说明以英文原文为准。
+
+## 更新记录
+
+- 新增 `avian` provider（OpenAI 兼容，环境变量：`AVIAN_API_KEY`）。详情见英文原文。

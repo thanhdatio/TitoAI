@@ -20,3 +20,4 @@ Source anglaise:
 ## Notes de mise à jour
 
 - Ajout d'un réglage `provider.reasoning_level` pour le niveau de raisonnement OpenAI Codex. Voir la source anglaise pour les détails.
+- Ajout du provider `avian` (OpenAI-compatible, env var: `AVIAN_API_KEY`). Voir la source anglaise pour les détails.
