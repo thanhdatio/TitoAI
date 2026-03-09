@@ -1923,6 +1923,8 @@ async fn execute_one_tool(
         });
     };
 
+    crate::observability::metrics::global().increment("tool_calls_total");
+
     let tool_future = tool.execute(call_arguments);
     let tool_result = if let Some(token) = cancellation_token {
         tokio::select! {
@@ -1949,6 +1951,7 @@ async fn execute_one_tool(
                     duration,
                 })
             } else {
+                crate::observability::metrics::global().increment("tool_errors_total");
                 let reason = r.error.unwrap_or(r.output);
                 Ok(ToolExecutionOutcome {
                     output: format!("Error: {reason}"),
@@ -1959,6 +1962,7 @@ async fn execute_one_tool(
             }
         }
         Err(e) => {
+            crate::observability::metrics::global().increment("tool_errors_total");
             let duration = start.elapsed();
             observer.record_event(&ObserverEvent::ToolCall {
                 tool: call_name.to_string(),
@@ -2163,6 +2167,8 @@ pub(crate) async fn run_tool_call_loop(
         } else {
             None
         };
+
+        crate::observability::metrics::global().increment("provider_requests_total");
 
         let chat_future = provider.chat(
             ChatRequest {

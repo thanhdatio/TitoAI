@@ -654,11 +654,8 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         .layer(RequestBodyLimitLayer::new(1_048_576));
 
     // Build router with middleware
-    let app = Router::new()
+    let mut app = Router::new()
         // ── Existing routes ──
-        .route("/health", get(health::handle_liveness))
-        .route("/ready", get(health::handle_readiness))
-        .route("/metrics", get(handle_metrics))
         .route("/pair", post(handle_pair))
         .route("/webhook", post(handle_webhook))
         .route("/whatsapp", get(handle_whatsapp_verify))
@@ -692,7 +689,19 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         // ── Static assets (web dashboard) ──
         .route("/_app/{*path}", get(static_files::handle_static))
         // ── Config PUT with larger body limit ──
-        .merge(config_put_router)
+        .merge(config_put_router);
+
+    // ── Conditionally register observability endpoints ──
+    if config.observability.health_enabled {
+        app = app
+            .route("/health", get(health::handle_liveness))
+            .route("/ready", get(health::handle_readiness));
+    }
+    if config.observability.metrics_enabled {
+        app = app.route("/metrics", get(handle_metrics));
+    }
+
+    let app = app
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
         .layer(TimeoutLayer::with_status_code(
@@ -945,6 +954,8 @@ async fn handle_webhook(
             return (StatusCode::OK, Json(body));
         }
     }
+
+    crate::observability::metrics::global().increment("requests_total");
 
     let message = &webhook_body.message;
 
