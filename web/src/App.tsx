@@ -28,7 +28,7 @@ interface LocaleContextType {
 }
 
 export const LocaleContext = createContext<LocaleContextType>({
-    locale: "tr" as Locale,
+    locale: "tr",
     setAppLocale: () => {},
 });
 
@@ -134,7 +134,10 @@ function PairingDialog({
                         autoFocus
                     />
                     {error && (
-                        <p className="text-red-400 text-sm mb-4 text-center">
+                        <p
+                            className="text-red-400 text-sm mb-4 text-center"
+                            aria-live="polite"
+                        >
                             {error}
                         </p>
                     )}

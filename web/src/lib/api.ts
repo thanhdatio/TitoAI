@@ -193,14 +193,25 @@ export function addCronJob(body: {
     schedule: string;
     enabled?: boolean;
 }): Promise<CronJob> {
-    return apiFetch<CronJob | { status: string; job: CronJob }>("/api/cron", {
+    return apiFetch<unknown>("/api/cron", {
         method: "POST",
         body: JSON.stringify(body),
-    }).then((data) =>
-        typeof (data as { job?: CronJob }).job === "object"
-            ? (data as { job: CronJob }).job
-            : (data as CronJob),
-    );
+    }).then((data) => {
+        if (data && typeof data === "object" && "job" in data) {
+            const job = (data as { job?: unknown }).job;
+            if (job && typeof job === "object" && !Array.isArray(job)) {
+                return job as CronJob;
+            }
+            throw new Error(
+                "Invalid cron job response: missing or malformed job",
+            );
+        }
+        // Assume direct CronJob shape (server returned the object directly)
+        if (data && typeof data === "object" && "id" in data) {
+            return data as CronJob;
+        }
+        throw new Error("Invalid cron job response");
+    });
 }
 
 export function deleteCronJob(id: string): Promise<void> {
