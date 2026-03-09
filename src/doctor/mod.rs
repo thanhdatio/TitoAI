@@ -1298,6 +1298,7 @@ mod tests {
             max_tokens: None,
             api_key: None,
             transport: None,
+            message_timeout_secs: None,
         }];
         let mut items = Vec::new();
         check_config_semantics(&config, &mut items);

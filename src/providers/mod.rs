@@ -3662,6 +3662,7 @@ providers = ["demo-plugin-provider"]
             max_tokens: Some(4096),
             api_key: None,
             transport: None,
+            message_timeout_secs: None,
         }];
 
         let provider = create_routed_provider_with_options(
@@ -3686,6 +3687,7 @@ providers = ["demo-plugin-provider"]
             max_tokens: None,
             api_key: None,
             transport: None,
+            message_timeout_secs: None,
         }];
 
         let provider = create_routed_provider_with_options(
@@ -3713,6 +3715,7 @@ providers = ["demo-plugin-provider"]
             max_tokens: None,
             api_key: None,
             transport: None,
+            message_timeout_secs: None,
         }];
 
         let provider = create_routed_provider_with_options(
@@ -3740,6 +3743,7 @@ providers = ["demo-plugin-provider"]
             max_tokens: None,
             api_key: None,
             transport: None,
+            message_timeout_secs: None,
         }];
 
         let err = match create_routed_provider_with_options(

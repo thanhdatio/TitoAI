@@ -209,6 +209,7 @@ fn channel_message_timeout_budget_secs(
 struct ChannelRouteSelection {
     provider: String,
     model: String,
+    message_timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1918,6 +1919,7 @@ fn default_route_selection(ctx: &ChannelRuntimeContext) -> ChannelRouteSelection
     ChannelRouteSelection {
         provider: defaults.default_provider,
         model: defaults.model,
+        message_timeout_secs: None,
     }
 }
 
@@ -1954,6 +1956,7 @@ fn classify_message_route(
     Some(ChannelRouteSelection {
         provider: route.provider.clone(),
         model: route.model.clone(),
+        message_timeout_secs: route.message_timeout_secs,
     })
 }
 
@@ -4034,8 +4037,11 @@ If this input is legitimate, rephrase the request and avoid instruction-override
         Cancelled,
     }
 
+    let effective_timeout_secs = route
+        .message_timeout_secs
+        .unwrap_or(runtime_defaults.message_timeout_secs);
     let timeout_budget_secs = channel_message_timeout_budget_secs(
-        runtime_defaults.message_timeout_secs,
+        effective_timeout_secs,
         runtime_defaults.max_tool_iterations,
     );
     let cost_enforcement_context = crate::agent::loop_::create_cost_enforcement_context(
@@ -4490,9 +4496,10 @@ If this input is legitimate, rephrase the request and avoid instruction-override
         }
         LlmExecutionResult::Completed(Err(_)) => {
             let timeout_msg = format!(
-                "LLM response timed out after {}s (base={}s, max_tool_iterations={})",
+                "LLM response timed out after {}s (base={}s, route_override={}, max_tool_iterations={})",
                 timeout_budget_secs,
-                runtime_defaults.message_timeout_secs,
+                effective_timeout_secs,
+                route.message_timeout_secs.is_some(),
                 runtime_defaults.max_tool_iterations
             );
             runtime_trace::record_event(
@@ -6214,6 +6221,20 @@ mod tests {
             channel_message_timeout_budget_secs(300, 10),
             300 * CHANNEL_MESSAGE_TIMEOUT_SCALE_CAP
         );
+    }
+
+    #[test]
+    fn timeout_budget_uses_route_override_when_present() {
+        // Route has message_timeout_secs = 300; global = 120; iterations = 20 (cap=4)
+        // Expected: 300 * 4 = 1200s
+        assert_eq!(channel_message_timeout_budget_secs(300, 20), 1200);
+    }
+
+    #[test]
+    fn timeout_budget_falls_back_to_global_when_route_has_no_override() {
+        // No route override; global = 120; iterations = 20 (cap=4)
+        // Expected: 120 * 4 = 480s
+        assert_eq!(channel_message_timeout_budget_secs(120, 20), 480);
     }
 
     #[test]
@@ -9745,6 +9766,7 @@ BTC is currently around $65,000 based on latest tool output."#
             ChannelRouteSelection {
                 provider: "openrouter".to_string(),
                 model: "route-model".to_string(),
+                message_timeout_secs: None,
             },
         );
 
@@ -10239,6 +10261,7 @@ BTC is currently around $65,000 based on latest tool output."#
             max_tokens: Some(512),
             api_key: None,
             transport: None,
+            message_timeout_secs: None,
         }];
         cfg.save().await.expect("save updated config");
 
@@ -10315,6 +10338,7 @@ BTC is currently around $65,000 based on latest tool output."#
             max_tokens: Some(512),
             api_key: Some("route-specific-key".to_string()),
             transport: Some("sse".to_string()),
+            message_timeout_secs: None,
         }];
 
         let config_path = cfg.config_path.clone();
@@ -12908,5 +12932,187 @@ BTC is currently around $65,000 based on latest tool output."#;
             turns.iter().all(|turn| !turn.content.contains("[IMAGE:")),
             "failed vision turn must not persist image marker content"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // /providers — configured provider list and response formatting
+    // -----------------------------------------------------------------------
+
+    fn make_config_with_providers(
+        default_provider: &str,
+        fallback_providers: Vec<&str>,
+    ) -> crate::config::Config {
+        let mut config = crate::config::Config::default();
+        config.default_provider = Some(default_provider.to_string());
+        config.reliability.fallback_providers =
+            fallback_providers.into_iter().map(String::from).collect();
+        config
+    }
+
+    #[test]
+    fn build_configured_providers_includes_default_and_fallbacks() {
+        let config = make_config_with_providers(
+            "openai-codex",
+            vec![
+                "gemini:gemini-1",
+                "gemini:gemini-2",
+                "openai-codex:codex-1",
+                "openai-codex:codex-2",
+            ],
+        );
+        let list = build_configured_providers(&config);
+
+        // default_provider (bare type) must NOT appear — only real configured profiles
+        assert!(
+            !list.contains(&"openai-codex".to_string()),
+            "bare default_provider must not appear in list"
+        );
+        assert!(
+            list.contains(&"gemini:gemini-1".to_string()),
+            "must include gemini:gemini-1"
+        );
+        assert!(
+            list.contains(&"gemini:gemini-2".to_string()),
+            "must include gemini:gemini-2"
+        );
+        assert!(
+            list.contains(&"openai-codex:codex-1".to_string()),
+            "must include openai-codex:codex-1"
+        );
+        assert!(
+            list.contains(&"openai-codex:codex-2".to_string()),
+            "must include openai-codex:codex-2"
+        );
+        assert_eq!(list.len(), 4, "exactly 4 configured profiles");
+    }
+
+    #[test]
+    fn build_configured_providers_no_duplicates() {
+        // default_provider appears in fallback_providers too — must not duplicate
+        let config =
+            make_config_with_providers("openai-codex", vec!["openai-codex", "gemini:gemini-1"]);
+        let list = build_configured_providers(&config);
+        let count = list.iter().filter(|s| s.as_str() == "openai-codex").count();
+        assert_eq!(
+            count, 1,
+            "openai-codex must appear exactly once, got: {list:?}"
+        );
+    }
+
+    #[test]
+    fn build_configured_providers_is_sorted() {
+        let config = make_config_with_providers(
+            "openai-codex",
+            vec![
+                "gemini:gemini-2",
+                "gemini:gemini-1",
+                "openai-codex:codex-2",
+                "openai-codex:codex-1",
+            ],
+        );
+        let list = build_configured_providers(&config);
+        let mut sorted = list.clone();
+        sorted.sort();
+        assert_eq!(list, sorted, "list must be sorted alphabetically");
+    }
+
+    #[test]
+    fn build_providers_help_response_marks_active_with_star() {
+        let current = ChannelRouteSelection {
+            provider: "gemini:gemini-1".to_string(),
+            model: "gemini-2.5-flash".to_string(),
+            message_timeout_secs: None,
+        };
+        let configured = vec![
+            "gemini:gemini-1".to_string(),
+            "gemini:gemini-2".to_string(),
+            "openai-codex".to_string(),
+        ];
+        let response = build_providers_help_response(&current, &[], &configured);
+
+        assert!(
+            response.contains("* 1. gemini:gemini-1"),
+            "active provider must be marked with *; got:\n{response}"
+        );
+        assert!(
+            response.contains("  2. gemini:gemini-2"),
+            "inactive must have space; got:\n{response}"
+        );
+        assert!(
+            response.contains("  3. openai-codex"),
+            "inactive must have space; got:\n{response}"
+        );
+    }
+
+    #[test]
+    fn build_providers_help_response_marks_opened_with_tilde() {
+        let current = ChannelRouteSelection {
+            provider: "openai-codex".to_string(),
+            model: "gpt-5.2".to_string(),
+            message_timeout_secs: None,
+        };
+        let configured = vec!["gemini:gemini-1".to_string(), "openai-codex".to_string()];
+        let opened = vec!["gemini:gemini-1".to_string()];
+        let response = build_providers_help_response(&current, &opened, &configured);
+
+        assert!(
+            response.contains("~ 1. gemini:gemini-1"),
+            "opened provider must be marked with ~; got:\n{response}"
+        );
+        assert!(
+            response.contains("* 2. openai-codex"),
+            "active must be marked with *; got:\n{response}"
+        );
+    }
+
+    #[test]
+    fn build_providers_help_response_all_configured_appear() {
+        let current = ChannelRouteSelection {
+            provider: "openai-codex".to_string(),
+            model: "gpt-5.2".to_string(),
+            message_timeout_secs: None,
+        };
+        let configured = vec![
+            "gemini:gemini-1".to_string(),
+            "gemini:gemini-2".to_string(),
+            "openai-codex".to_string(),
+            "openai-codex:codex-1".to_string(),
+            "openai-codex:codex-2".to_string(),
+        ];
+        let response = build_providers_help_response(&current, &[], &configured);
+
+        for name in &configured {
+            assert!(
+                response.contains(name.as_str()),
+                "response must contain {name}; got:\n{response}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_provider_alias_accepts_profile_names() {
+        // Profile names like "gemini:gemini-1" are not in the static registry
+        // but must be accepted as valid (passed through as-is)
+        let result = resolve_provider_alias("gemini:gemini-1");
+        assert_eq!(result, Some("gemini:gemini-1".to_string()));
+
+        let result = resolve_provider_alias("openai-codex:codex-2");
+        assert_eq!(result, Some("openai-codex:codex-2".to_string()));
+    }
+
+    #[test]
+    fn resolve_provider_alias_rejects_empty() {
+        assert_eq!(resolve_provider_alias(""), None);
+        assert_eq!(resolve_provider_alias("   "), None);
+    }
+
+    #[test]
+    fn resolve_provider_alias_accepts_known_base_providers() {
+        // Base providers from the static registry must still resolve
+        let result = resolve_provider_alias("gemini");
+        assert_eq!(result, Some("gemini".to_string()));
+
+        let result = resolve_provider_alias("openai-codex");
+        assert_eq!(result, Some("openai-codex".to_string()));
     }
 }
