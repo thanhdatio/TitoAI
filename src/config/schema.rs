@@ -170,6 +170,19 @@ pub struct Config {
     #[serde(default)]
     pub browser: BrowserConfig,
 
+    /// Browser delegation configuration (`[browser_delegate]`).
+    ///
+    /// Defaults:
+    /// - `enabled = false`
+    /// - `cli_binary` uses the runtime default browser CLI (`"claude"`)
+    /// - `task_timeout_secs = 120`
+    /// - `max_concurrent_tasks = 2`
+    ///
+    /// Compatibility: additive and disabled by default; existing configs remain valid when omitted.
+    /// Rollback/migration: remove `[browser_delegate]` or keep `enabled = false` to disable.
+    #[serde(default)]
+    pub browser_delegate: crate::tools::browser_delegate::BrowserDelegateConfig,
+
     /// HTTP request tool configuration (`[http_request]`).
     #[serde(default)]
     pub http_request: HttpRequestConfig,
@@ -3616,6 +3629,7 @@ impl Default for Config {
             composio: ComposioConfig::default(),
             secrets: SecretsConfig::default(),
             browser: BrowserConfig::default(),
+            browser_delegate: crate::tools::browser_delegate::BrowserDelegateConfig::default(),
             http_request: HttpRequestConfig::default(),
             multimodal: MultimodalConfig::default(),
             web_fetch: WebFetchConfig::default(),
@@ -5148,6 +5162,7 @@ default_temperature = 0.7
             composio: ComposioConfig::default(),
             secrets: SecretsConfig::default(),
             browser: BrowserConfig::default(),
+            browser_delegate: crate::tools::browser_delegate::BrowserDelegateConfig::default(),
             http_request: HttpRequestConfig::default(),
             multimodal: MultimodalConfig::default(),
             web_fetch: WebFetchConfig::default(),
@@ -5330,6 +5345,7 @@ tool_dispatcher = "xml"
             composio: ComposioConfig::default(),
             secrets: SecretsConfig::default(),
             browser: BrowserConfig::default(),
+            browser_delegate: crate::tools::browser_delegate::BrowserDelegateConfig::default(),
             http_request: HttpRequestConfig::default(),
             multimodal: MultimodalConfig::default(),
             web_fetch: WebFetchConfig::default(),
