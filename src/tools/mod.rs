@@ -50,6 +50,7 @@ pub mod pushover;
 pub mod schedule;
 pub mod schema;
 pub mod screenshot;
+pub mod security_ops;
 pub mod shell;
 pub mod traits;
 pub mod web_fetch;
@@ -90,6 +91,7 @@ pub use schedule::ScheduleTool;
 #[allow(unused_imports)]
 pub use schema::{CleaningStrategy, SchemaCleanr};
 pub use screenshot::ScreenshotTool;
+pub use security_ops::SecurityOpsTool;
 pub use shell::ShellTool;
 pub use traits::Tool;
 #[allow(unused_imports)]
@@ -294,6 +296,13 @@ pub fn all_tools_with_runtime(
             root_config.web_search.brave_api_key.clone(),
             root_config.web_search.max_results,
             root_config.web_search.timeout_secs,
+        )));
+    }
+
+    // Security operations (MCSS) tools
+    if root_config.security_ops.enabled {
+        tool_arcs.push(Arc::new(SecurityOpsTool::new(
+            root_config.security_ops.clone(),
         )));
     }
 

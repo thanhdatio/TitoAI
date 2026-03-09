@@ -217,6 +217,10 @@ pub struct Config {
     /// Voice transcription configuration (Whisper API via Groq).
     #[serde(default)]
     pub transcription: TranscriptionConfig,
+
+    /// Managed cybersecurity service configuration (`[security_ops]`).
+    #[serde(default)]
+    pub security_ops: SecurityOpsConfig,
 }
 
 /// Named provider profile definition compatible with Codex app-server style config.
@@ -3579,6 +3583,65 @@ pub fn default_nostr_relays() -> Vec<String> {
     ]
 }
 
+// ── Security ops config ─────────────────────────────────────────
+
+/// Managed Cybersecurity Service (MCSS) dashboard agent configuration (`[security_ops]`).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SecurityOpsConfig {
+    /// Enable security operations tools.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Directory containing incident response playbook definitions (JSON).
+    #[serde(default = "default_playbooks_dir")]
+    pub playbooks_dir: String,
+    /// Automatically triage incoming alerts without user prompt.
+    #[serde(default)]
+    pub auto_triage: bool,
+    /// Require human approval before executing playbook actions.
+    #[serde(default = "default_require_approval")]
+    pub require_approval_for_actions: bool,
+    /// Maximum severity level that can be auto-remediated without approval.
+    /// One of: "low", "medium", "high", "critical". Default: "low".
+    #[serde(default = "default_max_auto_severity")]
+    pub max_auto_severity: String,
+    /// Directory for generated security reports.
+    #[serde(default = "default_report_output_dir")]
+    pub report_output_dir: String,
+    /// Optional SIEM webhook URL for alert ingestion.
+    #[serde(default)]
+    pub siem_integration: Option<String>,
+}
+
+fn default_playbooks_dir() -> String {
+    "~/.zeroclaw/playbooks".into()
+}
+
+fn default_require_approval() -> bool {
+    true
+}
+
+fn default_max_auto_severity() -> String {
+    "low".into()
+}
+
+fn default_report_output_dir() -> String {
+    "~/.zeroclaw/security-reports".into()
+}
+
+impl Default for SecurityOpsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            playbooks_dir: default_playbooks_dir(),
+            auto_triage: false,
+            require_approval_for_actions: true,
+            max_auto_severity: default_max_auto_severity(),
+            report_output_dir: default_report_output_dir(),
+            siem_integration: None,
+        }
+    }
+}
+
 // ── Config impl ──────────────────────────────────────────────────
 
 impl Default for Config {
@@ -3629,6 +3692,7 @@ impl Default for Config {
             hardware: HardwareConfig::default(),
             query_classification: QueryClassificationConfig::default(),
             transcription: TranscriptionConfig::default(),
+            security_ops: SecurityOpsConfig::default(),
         }
     }
 }
@@ -4090,6 +4154,12 @@ impl Config {
                 "config.storage.provider.config.db_url",
             )?;
 
+            decrypt_optional_secret(
+                &store,
+                &mut config.security_ops.siem_integration,
+                "config.security_ops.siem_integration",
+            )?;
+
             for agent in config.agents.values_mut() {
                 decrypt_optional_secret(&store, &mut agent.api_key, "config.agents.*.api_key")?;
             }
@@ -4379,6 +4449,27 @@ impl Config {
             if !has_ollama_cloud_credential(self.api_key.as_deref()) {
                 anyhow::bail!(
                     "default_model uses ':cloud' with provider 'ollama', but no API key is configured. Set api_key or OLLAMA_API_KEY."
+                );
+            }
+        }
+
+        // Security ops
+        let severity = self.security_ops.max_auto_severity.trim().to_ascii_lowercase();
+        if !["low", "medium", "high", "critical"].contains(&severity.as_str()) {
+            anyhow::bail!(
+                "security_ops.max_auto_severity must be one of: low, medium, high, critical; got '{}'",
+                self.security_ops.max_auto_severity
+            );
+        }
+        if self.security_ops.enabled {
+            if self.security_ops.playbooks_dir.trim().is_empty() {
+                anyhow::bail!(
+                    "security_ops.playbooks_dir must not be empty when security_ops is enabled"
+                );
+            }
+            if self.security_ops.report_output_dir.trim().is_empty() {
+                anyhow::bail!(
+                    "security_ops.report_output_dir must not be empty when security_ops is enabled"
                 );
             }
         }
@@ -4710,6 +4801,12 @@ impl Config {
             &store,
             &mut config_to_save.storage.provider.config.db_url,
             "config.storage.provider.config.db_url",
+        )?;
+
+        encrypt_optional_secret(
+            &store,
+            &mut config_to_save.security_ops.siem_integration,
+            "config.security_ops.siem_integration",
         )?;
 
         for agent in config_to_save.agents.values_mut() {
@@ -5161,6 +5258,7 @@ default_temperature = 0.7
             hooks: HooksConfig::default(),
             hardware: HardwareConfig::default(),
             transcription: TranscriptionConfig::default(),
+            security_ops: SecurityOpsConfig::default(),
         };
 
         let toml_str = toml::to_string_pretty(&config).unwrap();
@@ -5343,6 +5441,7 @@ tool_dispatcher = "xml"
             hooks: HooksConfig::default(),
             hardware: HardwareConfig::default(),
             transcription: TranscriptionConfig::default(),
+            security_ops: SecurityOpsConfig::default(),
         };
 
         config.save().await.unwrap();
