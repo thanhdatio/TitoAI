@@ -117,7 +117,7 @@ export async function pair(code: string): Promise<{ token: string }> {
         !data ||
         typeof data !== "object" ||
         typeof (data as { token?: unknown }).token !== "string" ||
-        !(data as { token: string }).token
+        (data as { token: string }).token.trim().length === 0
     ) {
         throw new Error("Invalid pairing response: missing token");
     }
