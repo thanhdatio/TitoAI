@@ -217,6 +217,10 @@ pub struct Config {
     /// Voice transcription configuration (Whisper API via Groq).
     #[serde(default)]
     pub transcription: TranscriptionConfig,
+
+    /// CLI session manager configuration (`[cli_sessions]`).
+    #[serde(default)]
+    pub cli_sessions: crate::providers::cli_session::CliSessionConfig,
 }
 
 /// Named provider profile definition compatible with Codex app-server style config.
@@ -3611,6 +3615,7 @@ impl Default for Config {
             hardware: HardwareConfig::default(),
             query_classification: QueryClassificationConfig::default(),
             transcription: TranscriptionConfig::default(),
+            cli_sessions: crate::providers::cli_session::CliSessionConfig::default(),
         }
     }
 }
@@ -5143,6 +5148,7 @@ default_temperature = 0.7
             hooks: HooksConfig::default(),
             hardware: HardwareConfig::default(),
             transcription: TranscriptionConfig::default(),
+            cli_sessions: crate::providers::cli_session::CliSessionConfig::default(),
         };
 
         let toml_str = toml::to_string_pretty(&config).unwrap();
@@ -5325,6 +5331,7 @@ tool_dispatcher = "xml"
             hooks: HooksConfig::default(),
             hardware: HardwareConfig::default(),
             transcription: TranscriptionConfig::default(),
+            cli_sessions: crate::providers::cli_session::CliSessionConfig::default(),
         };
 
         config.save().await.unwrap();
