@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Resolved Microsoft 365 configuration with all secrets decrypted and defaults applied.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Microsoft365ResolvedConfig {
     pub tenant_id: String,
     pub client_id: String,
@@ -10,6 +10,20 @@ pub struct Microsoft365ResolvedConfig {
     pub scopes: Vec<String>,
     pub token_cache_encrypted: bool,
     pub user_id: String,
+}
+
+impl std::fmt::Debug for Microsoft365ResolvedConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Microsoft365ResolvedConfig")
+            .field("tenant_id", &self.tenant_id)
+            .field("client_id", &self.client_id)
+            .field("client_secret", &self.client_secret.as_ref().map(|_| "***"))
+            .field("auth_flow", &self.auth_flow)
+            .field("scopes", &self.scopes)
+            .field("token_cache_encrypted", &self.token_cache_encrypted)
+            .field("user_id", &self.user_id)
+            .finish()
+    }
 }
 
 #[cfg(test)]

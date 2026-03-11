@@ -134,7 +134,8 @@ impl TokenCache {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("ms365: client_credentials token request failed ({status}): {body}");
+            tracing::debug!("ms365: client_credentials raw OAuth error: {body}");
+            anyhow::bail!("ms365: client_credentials token request failed ({status})");
         }
 
         let token_resp: TokenResponse = resp
@@ -169,7 +170,8 @@ impl TokenCache {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("ms365: device code request failed ({status}): {body}");
+            tracing::debug!("ms365: device_code initiation raw error: {body}");
+            anyhow::bail!("ms365: device code request failed ({status})");
         }
 
         let device_resp: DeviceCodeResponse = resp
@@ -177,7 +179,14 @@ impl TokenCache {
             .await
             .context("ms365: failed to parse device code response")?;
 
-        tracing::info!("ms365: device code auth required. {}", device_resp.message);
+        // Log only a generic prompt; the full device_resp.message may contain
+        // sensitive verification URIs or codes that should not appear in logs.
+        tracing::info!(
+            "ms365: device code auth required — follow the instructions shown to the user"
+        );
+        // Print the user-facing message to stderr so the operator can act on it
+        // without it being captured in structured log sinks.
+        eprintln!("ms365: {}", device_resp.message);
 
         let token_url = format!(
             "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
@@ -224,7 +233,8 @@ impl TokenCache {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 continue;
             }
-            anyhow::bail!("ms365: device code polling failed: {body}");
+            tracing::debug!("ms365: device code polling raw error: {body}");
+            anyhow::bail!("ms365: device code polling failed");
         }
 
         anyhow::bail!("ms365: device code flow timed out waiting for user authorization")
@@ -262,7 +272,8 @@ impl TokenCache {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("ms365: token refresh failed ({status}): {body}");
+            tracing::debug!("ms365: token refresh raw error: {body}");
+            anyhow::bail!("ms365: token refresh failed ({status})");
         }
 
         let token_resp: TokenResponse = resp

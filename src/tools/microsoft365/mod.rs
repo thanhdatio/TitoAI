@@ -192,7 +192,8 @@ impl Microsoft365Tool {
         let max_size = args["max_size"]
             .as_u64()
             .and_then(|v| usize::try_from(v).ok())
-            .unwrap_or(MAX_ONEDRIVE_DOWNLOAD_SIZE);
+            .unwrap_or(MAX_ONEDRIVE_DOWNLOAD_SIZE)
+            .min(MAX_ONEDRIVE_DOWNLOAD_SIZE);
 
         let bytes = graph_client::onedrive_download(
             &self.http_client,

@@ -3,12 +3,18 @@ use anyhow::Context;
 const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
 
 /// Build the user path segment: `/me` or `/users/{user_id}`.
+/// The user_id is percent-encoded to prevent path-traversal attacks.
 fn user_path(user_id: &str) -> String {
     if user_id == "me" {
         "/me".to_string()
     } else {
-        format!("/users/{user_id}")
+        format!("/users/{}", urlencoding::encode(user_id))
     }
+}
+
+/// Percent-encode a single path segment to prevent path-traversal attacks.
+fn encode_path_segment(segment: &str) -> String {
+    urlencoding::encode(segment).into_owned()
 }
 
 /// List mail messages for a user.
@@ -21,7 +27,10 @@ pub async fn mail_list(
 ) -> anyhow::Result<serde_json::Value> {
     let base = user_path(user_id);
     let path = match folder {
-        Some(f) => format!("{GRAPH_BASE}{base}/mailFolders/{f}/messages"),
+        Some(f) => format!(
+            "{GRAPH_BASE}{base}/mailFolders/{}/messages",
+            encode_path_segment(f)
+        ),
         None => format!("{GRAPH_BASE}{base}/messages"),
     };
 
@@ -79,7 +88,9 @@ pub async fn mail_send(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("ms365: mail_send failed ({status}): {body}");
+        let code = extract_graph_error_code(&body).unwrap_or_else(|| "unknown".to_string());
+        tracing::debug!("ms365: mail_send raw error body: {body}");
+        anyhow::bail!("ms365: mail_send failed ({status}, code={code})");
     }
 
     Ok(())
@@ -93,7 +104,11 @@ pub async fn teams_message_list(
     channel_id: &str,
     top: u32,
 ) -> anyhow::Result<serde_json::Value> {
-    let url = format!("{GRAPH_BASE}/teams/{team_id}/channels/{channel_id}/messages");
+    let url = format!(
+        "{GRAPH_BASE}/teams/{}/channels/{}/messages",
+        encode_path_segment(team_id),
+        encode_path_segment(channel_id)
+    );
 
     let resp = client
         .get(&url)
@@ -114,7 +129,11 @@ pub async fn teams_message_send(
     channel_id: &str,
     body: &str,
 ) -> anyhow::Result<()> {
-    let url = format!("{GRAPH_BASE}/teams/{team_id}/channels/{channel_id}/messages");
+    let url = format!(
+        "{GRAPH_BASE}/teams/{}/channels/{}/messages",
+        encode_path_segment(team_id),
+        encode_path_segment(channel_id)
+    );
 
     let payload = serde_json::json!({
         "body": {
@@ -133,7 +152,9 @@ pub async fn teams_message_send(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("ms365: teams_message_send failed ({status}): {body}");
+        let code = extract_graph_error_code(&body).unwrap_or_else(|| "unknown".to_string());
+        tracing::debug!("ms365: teams_message_send raw error body: {body}");
+        anyhow::bail!("ms365: teams_message_send failed ({status}, code={code})");
     }
 
     Ok(())
@@ -231,7 +252,10 @@ pub async fn calendar_event_delete(
     event_id: &str,
 ) -> anyhow::Result<()> {
     let base = user_path(user_id);
-    let url = format!("{GRAPH_BASE}{base}/events/{event_id}");
+    let url = format!(
+        "{GRAPH_BASE}{base}/events/{}",
+        encode_path_segment(event_id)
+    );
 
     let resp = client
         .delete(&url)
@@ -243,7 +267,9 @@ pub async fn calendar_event_delete(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("ms365: calendar_event_delete failed ({status}): {body}");
+        let code = extract_graph_error_code(&body).unwrap_or_else(|| "unknown".to_string());
+        tracing::debug!("ms365: calendar_event_delete raw error body: {body}");
+        anyhow::bail!("ms365: calendar_event_delete failed ({status}, code={code})");
     }
 
     Ok(())
@@ -284,7 +310,10 @@ pub async fn onedrive_download(
     max_size: usize,
 ) -> anyhow::Result<Vec<u8>> {
     let base = user_path(user_id);
-    let url = format!("{GRAPH_BASE}{base}/drive/items/{item_id}/content");
+    let url = format!(
+        "{GRAPH_BASE}{base}/drive/items/{}/content",
+        encode_path_segment(item_id)
+    );
 
     let resp = client
         .get(&url)
@@ -296,7 +325,9 @@ pub async fn onedrive_download(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("ms365: onedrive_download failed ({status}): {body}");
+        let code = extract_graph_error_code(&body).unwrap_or_else(|| "unknown".to_string());
+        tracing::debug!("ms365: onedrive_download raw error body: {body}");
+        anyhow::bail!("ms365: onedrive_download failed ({status}, code={code})");
     }
 
     let bytes = resp
@@ -344,7 +375,22 @@ pub async fn sharepoint_search(
     handle_json_response(resp, "sharepoint_search").await
 }
 
+/// Extract a short, safe error code from a Graph API JSON error body.
+/// Returns `None` when the body is not a recognised Graph error envelope.
+fn extract_graph_error_code(body: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(body).ok()?;
+    let code = parsed
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.to_string());
+    code
+}
+
 /// Parse a JSON response body, returning an error on non-success status.
+/// Raw Graph API error bodies are not propagated; only the HTTP status and a
+/// short error code (when available) are surfaced to avoid leaking internal
+/// API details.
 async fn handle_json_response(
     resp: reqwest::Response,
     operation: &str,
@@ -352,7 +398,9 @@ async fn handle_json_response(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("ms365: {operation} failed ({status}): {body}");
+        let code = extract_graph_error_code(&body).unwrap_or_else(|| "unknown".to_string());
+        tracing::debug!("ms365: {operation} raw error body: {body}");
+        anyhow::bail!("ms365: {operation} failed ({status}, code={code})");
     }
 
     resp.json()
@@ -371,7 +419,7 @@ mod tests {
 
     #[test]
     fn user_path_specific_user() {
-        assert_eq!(user_path("user@contoso.com"), "/users/user@contoso.com");
+        assert_eq!(user_path("user@contoso.com"), "/users/user%40contoso.com");
     }
 
     #[test]
@@ -385,7 +433,10 @@ mod tests {
     fn mail_list_url_with_folder() {
         let base = user_path("me");
         let folder = "inbox";
-        let url = format!("{GRAPH_BASE}{base}/mailFolders/{folder}/messages");
+        let url = format!(
+            "{GRAPH_BASE}{base}/mailFolders/{}/messages",
+            encode_path_segment(folder)
+        );
         assert_eq!(
             url,
             "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages"
@@ -398,7 +449,7 @@ mod tests {
         let url = format!("{GRAPH_BASE}{base}/calendarView");
         assert_eq!(
             url,
-            "https://graph.microsoft.com/v1.0/users/user@example.com/calendarView"
+            "https://graph.microsoft.com/v1.0/users/user%40example.com/calendarView"
         );
     }
 
@@ -406,7 +457,8 @@ mod tests {
     fn teams_message_url() {
         let url = format!(
             "{GRAPH_BASE}/teams/{}/channels/{}/messages",
-            "team-123", "channel-456"
+            encode_path_segment("team-123"),
+            encode_path_segment("channel-456")
         );
         assert_eq!(
             url,

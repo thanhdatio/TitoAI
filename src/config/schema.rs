@@ -4677,6 +4677,17 @@ impl Config {
                     "microsoft365.auth_flow must be 'client_credentials' or 'device_code'"
                 );
             }
+            if flow == "client_credentials"
+                && self
+                    .microsoft365
+                    .client_secret
+                    .as_deref()
+                    .map_or(true, |s| s.trim().is_empty())
+            {
+                anyhow::bail!(
+                    "microsoft365.client_secret must not be empty when auth_flow is 'client_credentials'"
+                );
+            }
         }
 
         // Proxy (delegate to existing validation)

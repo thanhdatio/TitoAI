@@ -332,6 +332,19 @@ pub fn all_tools_with_runtime(
             .trim()
             .to_string();
         if !tenant_id.is_empty() && !client_id.is_empty() {
+            // Fail fast: client_credentials flow requires a client_secret at registration time.
+            if ms_cfg.auth_flow.trim() == "client_credentials"
+                && ms_cfg
+                    .client_secret
+                    .as_deref()
+                    .map_or(true, |s| s.trim().is_empty())
+            {
+                tracing::error!(
+                    "microsoft365: client_credentials auth_flow requires a non-empty client_secret"
+                );
+                return boxed_registry_from_arcs(tool_arcs);
+            }
+
             let resolved = microsoft365::types::Microsoft365ResolvedConfig {
                 tenant_id,
                 client_id,
