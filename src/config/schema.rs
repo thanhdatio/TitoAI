@@ -4463,9 +4463,7 @@ impl Config {
             if let Some(ref tpl_dir) = self.project_intel.templates_dir {
                 let path = std::path::Path::new(tpl_dir);
                 if !path.exists() {
-                    anyhow::bail!(
-                        "project_intel.templates_dir path does not exist: {tpl_dir}"
-                    );
+                    anyhow::bail!("project_intel.templates_dir path does not exist: {tpl_dir}");
                 }
             }
         }
