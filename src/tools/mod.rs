@@ -44,6 +44,7 @@ pub mod memory_forget;
 pub mod memory_recall;
 pub mod memory_store;
 pub mod model_routing_config;
+pub mod notion_tool;
 pub mod pdf_read;
 pub mod proxy_config;
 pub mod pushover;
@@ -83,6 +84,7 @@ pub use memory_forget::MemoryForgetTool;
 pub use memory_recall::MemoryRecallTool;
 pub use memory_store::MemoryStoreTool;
 pub use model_routing_config::ModelRoutingConfigTool;
+pub use notion_tool::NotionTool;
 pub use pdf_read::PdfReadTool;
 pub use proxy_config::ProxyConfigTool;
 pub use pushover::PushoverTool;
@@ -285,6 +287,37 @@ pub fn all_tools_with_runtime(
             web_fetch_config.max_response_size,
             web_fetch_config.timeout_secs,
         )));
+    }
+
+    // Notion API tool (enabled when notion channel is configured with a key)
+    if let Some(ref notion) = root_config.channels_config.notion {
+        if notion.enabled {
+            let notion_api_key = notion
+                .api_key
+                .clone()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    std::env::var("NOTION_API_KEY")
+                        .ok()
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                })
+                .unwrap_or_default();
+
+            if !notion_api_key.is_empty() {
+                let permissions = notion_tool::NotionPermissions {
+                    allow_read: notion.allow_read,
+                    allow_insert: notion.allow_insert,
+                    allow_update: notion.allow_update,
+                };
+                tool_arcs.push(Arc::new(NotionTool::new(
+                    notion_api_key,
+                    security.clone(),
+                    permissions,
+                )));
+            }
+        }
     }
 
     // Web search tool (enabled by default for GLM and other models)
