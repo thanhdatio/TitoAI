@@ -255,7 +255,6 @@ mod tests {
         assert!(limiter.check("user_a").is_err());
     }
 
-
     #[test]
     #[should_panic(expected = "window must be non-zero")]
     fn zero_window_panics() {
