@@ -111,12 +111,12 @@ impl BackupTool {
                 let manifest_path = path.join("manifest.json");
                 if manifest_path.exists() {
                     let manifest_data = fs::read_to_string(&manifest_path).await?;
-                    if let Ok(manifest) =
-                        serde_json::from_str::<BackupManifest>(&manifest_data)
-                    {
+                    if let Ok(manifest) = serde_json::from_str::<BackupManifest>(&manifest_data) {
                         entries.push(format!(
                             "{} (created: {}, files: {})",
-                            manifest.id, manifest.created_at, manifest.files.len()
+                            manifest.id,
+                            manifest.created_at,
+                            manifest.files.len()
                         ));
                     }
                 }
@@ -192,11 +192,7 @@ impl BackupTool {
         })
     }
 
-    async fn restore_backup(
-        &self,
-        backup_id: &str,
-        confirmed: bool,
-    ) -> anyhow::Result<ToolResult> {
+    async fn restore_backup(&self, backup_id: &str, confirmed: bool) -> anyhow::Result<ToolResult> {
         if !confirmed {
             return Ok(ToolResult {
                 success: false,
@@ -392,7 +388,10 @@ async fn copy_dir_recursive(
         let dest_path = dest.join(&name);
 
         if file_type.is_dir() {
-            Box::pin(copy_dir_recursive(&src_path, &dest_path, &rel_path, entries)).await?;
+            Box::pin(copy_dir_recursive(
+                &src_path, &dest_path, &rel_path, entries,
+            ))
+            .await?;
         } else if file_type.is_file() {
             let data = fs::read(&src_path).await?;
             let hash = hex_sha256(&data);

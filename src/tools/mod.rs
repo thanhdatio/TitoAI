@@ -20,8 +20,8 @@ pub mod agent_selection;
 pub mod agents_ipc;
 pub mod apply_patch;
 pub mod auth_profile;
-pub mod bg_run;
 pub mod backup_tool;
+pub mod bg_run;
 pub mod browser;
 pub mod browser_open;
 pub mod channel_ack_config;
@@ -91,11 +91,11 @@ pub mod xlsx_read;
 
 pub use agent_load_tracker::AgentLoadTracker;
 pub use apply_patch::ApplyPatchTool;
+pub use backup_tool::BackupTool;
 #[allow(unused_imports)]
 pub use bg_run::{
     format_bg_result_for_injection, BgJob, BgJobStatus, BgJobStore, BgRunTool, BgStatusTool,
 };
-pub use backup_tool::BackupTool;
 pub use browser::{BrowserTool, ComputerUseConfig};
 pub use browser_open::BrowserOpenTool;
 pub use channel_ack_config::ChannelAckConfigTool;

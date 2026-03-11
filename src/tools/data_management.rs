@@ -124,15 +124,11 @@ impl DataManagementTool {
                     data.insert(
                         store.clone(),
                         serde_json::Value::Array(
-                            files
-                                .into_iter()
-                                .map(serde_json::Value::String)
-                                .collect(),
+                            files.into_iter().map(serde_json::Value::String).collect(),
                         ),
                     );
                 }
-                let export_json =
-                    serde_json::to_string_pretty(&serde_json::Value::Object(data))?;
+                let export_json = serde_json::to_string_pretty(&serde_json::Value::Object(data))?;
                 Ok(ToolResult {
                     success: true,
                     output: format!("Export (JSON):\n{export_json}"),
@@ -224,10 +220,7 @@ impl DataManagementTool {
             let (count, size) = dir_stats(&store_dir).await?;
             total_files += count;
             total_size += size;
-            lines.push(format!(
-                "  {store}: {count} files, {}",
-                human_bytes(size)
-            ));
+            lines.push(format!("  {store}: {count} files, {}", human_bytes(size)));
         }
 
         lines.insert(
@@ -488,11 +481,8 @@ mod tests {
         // Set modification time to 200 days ago.
         let old_time =
             std::time::SystemTime::now() - std::time::Duration::from_secs(200 * 24 * 3600);
-        filetime::set_file_mtime(
-            &old_file,
-            filetime::FileTime::from_system_time(old_time),
-        )
-        .unwrap();
+        filetime::set_file_mtime(&old_file, filetime::FileTime::from_system_time(old_time))
+            .unwrap();
 
         let tool = make_tool(ws);
         let result = tool.purge_data(Some(90), true).await.unwrap();
@@ -514,11 +504,8 @@ mod tests {
 
         let old_time =
             std::time::SystemTime::now() - std::time::Duration::from_secs(200 * 24 * 3600);
-        filetime::set_file_mtime(
-            &old_file,
-            filetime::FileTime::from_system_time(old_time),
-        )
-        .unwrap();
+        filetime::set_file_mtime(&old_file, filetime::FileTime::from_system_time(old_time))
+            .unwrap();
 
         let tool = make_tool(ws);
         let result = tool.purge_data(Some(90), false).await.unwrap();
@@ -568,12 +555,7 @@ mod tests {
     #[tokio::test]
     async fn erasure_disabled_returns_error() {
         let tmp = TempDir::new().unwrap();
-        let tool = DataManagementTool::new(
-            tmp.path().to_path_buf(),
-            90,
-            false,
-            vec![],
-        );
+        let tool = DataManagementTool::new(tmp.path().to_path_buf(), 90, false, vec![]);
         let result = tool.gdpr_erasure("anyone").await.unwrap();
         assert!(!result.success);
         assert!(result.error.unwrap().contains("not enabled"));
