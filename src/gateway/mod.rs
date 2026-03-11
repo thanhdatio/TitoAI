@@ -310,6 +310,8 @@ pub struct AppState {
     pub cost_tracker: Option<Arc<CostTracker>>,
     /// SSE broadcast channel for real-time events
     pub event_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
+    /// Optional node registry for multi-machine coordination
+    pub node_registry: Option<Arc<crate::nodes::NodeRegistry>>,
 }
 
 /// Run the HTTP gateway using axum with proper HTTP/1.1 compliance.
@@ -645,6 +647,11 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         tools_registry,
         cost_tracker,
         event_tx,
+        node_registry: if config.node_system.enabled {
+            Some(Arc::new(crate::nodes::NodeRegistry::new(&config.node_system)))
+        } else {
+            None
+        },
     };
 
     // Config PUT needs larger body limit (1MB)
@@ -1518,6 +1525,183 @@ async fn handle_nextcloud_talk_webhook(
     (StatusCode::OK, Json(serde_json::json!({"status": "ok"})))
 }
 
+// â”€â”€ Node system request types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/// Request body for POST /api/node-control/register
+#[derive(Debug, serde::Deserialize)]
+struct NodeRegisterRequest {
+    node_id: String,
+    hostname: String,
+    address: String,
+    #[serde(default)]
+    capabilities: Vec<String>,
+    #[serde(default)]
+    version: String,
+}
+
+/// Request body for POST /api/node-control/heartbeat
+#[derive(Debug, serde::Deserialize)]
+struct NodeHeartbeatRequest {
+    node_id: String,
+}
+
+/// Request body for POST /api/node-control/invoke
+#[derive(Debug, serde::Deserialize)]
+struct NodeInvokeRequest {
+    node_id: String,
+    capability: String,
+    #[serde(default)]
+    arguments: serde_json::Value,
+}
+
+/// Validate node-system auth: checks require_auth + token.
+fn validate_node_system_auth(
+    state: &AppState,
+    peer_addr: SocketAddr,
+    headers: &HeaderMap,
+) -> Option<(StatusCode, Json<serde_json::Value>)> {
+    let registry = match &state.node_registry {
+        Some(r) => r,
+        None => {
+            return Some((
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({"error": "Node system is not enabled"})),
+            ))
+        }
+    };
+    let config = registry.config();
+    if config.require_auth {
+        if let Some(ref token) = config.auth_token {
+            let provided = headers
+                .get("X-Node-Control-Token")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            if !constant_time_eq(provided, token) {
+                return Some((
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"error": "Invalid node-control token"})),
+                ));
+            }
+        } else if !peer_addr.ip().is_loopback() {
+            return Some((
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Unauthorized: non-loopback without auth token"})),
+            ));
+        }
+    }
+    None
+}
+
+/// POST /api/node-control/register â€” register a node in the cluster.
+async fn handle_node_register(
+    State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<NodeRegisterRequest>,
+) -> impl IntoResponse {
+    if let Some(err) = validate_node_system_auth(&state, peer_addr, &headers) {
+        return err;
+    }
+    let registry = state.node_registry.as_ref().unwrap();
+    let info = crate::nodes::NodeInfo {
+        node_id: req.node_id.clone(),
+        hostname: req.hostname,
+        address: req.address,
+        capabilities: req.capabilities,
+        status: crate::nodes::NodeStatus::Online,
+        last_heartbeat: chrono::Utc::now(),
+        version: req.version,
+    };
+    match registry.register(info).await {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"status": "registered", "node_id": req.node_id})),
+        ),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
+/// POST /api/node-control/heartbeat â€” update heartbeat for a node.
+async fn handle_node_heartbeat(
+    State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<NodeHeartbeatRequest>,
+) -> impl IntoResponse {
+    if let Some(err) = validate_node_system_auth(&state, peer_addr, &headers) {
+        return err;
+    }
+    let registry = state.node_registry.as_ref().unwrap();
+    match registry.update_heartbeat(&req.node_id).await {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"status": "ok"}))),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
+/// POST /api/node-control/invoke â€” invoke an action on a registered node.
+async fn handle_node_invoke(
+    State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<NodeInvokeRequest>,
+) -> impl IntoResponse {
+    if let Some(err) = validate_node_system_auth(&state, peer_addr, &headers) {
+        return err;
+    }
+    let registry = state.node_registry.as_ref().unwrap();
+    let client = crate::nodes::NodeClient::new(Arc::new(registry.as_ref().clone()));
+    match client.invoke(&req.node_id, &req.capability, req.arguments).await {
+        Ok(result) => (StatusCode::OK, Json(result)),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
+/// GET /api/node-control/nodes â€” list all registered nodes.
+async fn handle_node_list(
+    State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Some(err) = validate_node_system_auth(&state, peer_addr, &headers) {
+        return err;
+    }
+    let registry = state.node_registry.as_ref().unwrap();
+    let nodes = registry.list().await;
+    (StatusCode::OK, Json(serde_json::json!({"nodes": nodes})))
+}
+
+/// DELETE /api/node-control/nodes/:id â€” unregister a node.
+async fn handle_node_unregister(
+    State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Path(node_id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    if let Some(err) = validate_node_system_auth(&state, peer_addr, &headers) {
+        return err;
+    }
+    let registry = state.node_registry.as_ref().unwrap();
+    match registry.unregister(&node_id).await {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"status": "unregistered", "node_id": node_id})),
+        ),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1600,6 +1784,7 @@ mod tests {
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
             event_tx: tokio::sync::broadcast::channel(16).0,
+            node_registry: None,
         };
 
         let response = handle_metrics(State(state)).await.into_response();
@@ -1649,6 +1834,7 @@ mod tests {
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
             event_tx: tokio::sync::broadcast::channel(16).0,
+            node_registry: None,
         };
 
         let response = handle_metrics(State(state)).await.into_response();
@@ -2015,6 +2201,7 @@ mod tests {
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
             event_tx: tokio::sync::broadcast::channel(16).0,
+            node_registry: None,
         };
 
         let mut headers = HeaderMap::new();
@@ -2079,6 +2266,7 @@ mod tests {
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
             event_tx: tokio::sync::broadcast::channel(16).0,
+            node_registry: None,
         };
 
         let headers = HeaderMap::new();
@@ -2155,6 +2343,7 @@ mod tests {
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
             event_tx: tokio::sync::broadcast::channel(16).0,
+            node_registry: None,
         };
 
         let response = handle_webhook(
@@ -2203,6 +2392,7 @@ mod tests {
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
             event_tx: tokio::sync::broadcast::channel(16).0,
+            node_registry: None,
         };
 
         let mut headers = HeaderMap::new();
@@ -2256,6 +2446,7 @@ mod tests {
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
             event_tx: tokio::sync::broadcast::channel(16).0,
+            node_registry: None,
         };
 
         let mut headers = HeaderMap::new();
@@ -2314,6 +2505,7 @@ mod tests {
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
             event_tx: tokio::sync::broadcast::channel(16).0,
+            node_registry: None,
         };
 
         let response = handle_nextcloud_talk_webhook(
@@ -2368,6 +2560,7 @@ mod tests {
             tools_registry: Arc::new(Vec::new()),
             cost_tracker: None,
             event_tx: tokio::sync::broadcast::channel(16).0,
+            node_registry: None,
         };
 
         let mut headers = HeaderMap::new();
