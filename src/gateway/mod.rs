@@ -648,7 +648,9 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         cost_tracker,
         event_tx,
         node_registry: if config.node_system.enabled {
-            Some(Arc::new(crate::nodes::NodeRegistry::new(&config.node_system)))
+            Some(Arc::new(crate::nodes::NodeRegistry::new(
+                &config.node_system,
+            )))
         } else {
             None
         },
@@ -1656,7 +1658,10 @@ async fn handle_node_invoke(
     }
     let registry = state.node_registry.as_ref().unwrap();
     let client = crate::nodes::NodeClient::new(Arc::new(registry.as_ref().clone()));
-    match client.invoke(&req.node_id, &req.capability, req.arguments).await {
+    match client
+        .invoke(&req.node_id, &req.capability, req.arguments)
+        .await
+    {
         Ok(result) => (StatusCode::OK, Json(result)),
         Err(e) => (
             StatusCode::BAD_GATEWAY,
