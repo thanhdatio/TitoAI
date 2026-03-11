@@ -60,11 +60,14 @@ impl SecurityOpsTool {
                 severity_level(severity) >= severity_level(&pb.severity_filter)
                     && (pb.name.contains(alert_type)
                         || alert_type.contains(&pb.name)
-                        || description.to_lowercase().contains(&pb.name.replace('_', " ")))
+                        || description
+                            .to_lowercase()
+                            .contains(&pb.name.replace('_', " ")))
             })
             .collect();
 
-        let playbook_names: Vec<&str> = matching_playbooks.iter().map(|p| p.name.as_str()).collect();
+        let playbook_names: Vec<&str> =
+            matching_playbooks.iter().map(|p| p.name.as_str()).collect();
 
         let output = json!({
             "classification": {
@@ -97,11 +100,10 @@ impl SecurityOpsTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing required 'playbook' parameter"))?;
 
-        let step_index = args
-            .get("step")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| anyhow::anyhow!("Missing required 'step' parameter (0-based index)"))?
-            as usize;
+        let step_index =
+            args.get("step").and_then(|v| v.as_u64()).ok_or_else(|| {
+                anyhow::anyhow!("Missing required 'step' parameter (0-based index)")
+            })? as usize;
 
         let alert_severity = args
             .get("alert_severity")
@@ -638,10 +640,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_action_returns_error() {
         let tool = test_tool();
-        let result = tool
-            .execute(json!({"action": "bad_action"}))
-            .await
-            .unwrap();
+        let result = tool.execute(json!({"action": "bad_action"})).await.unwrap();
 
         assert!(!result.success);
         assert!(result.error.unwrap().contains("Unknown action"));
