@@ -29,6 +29,8 @@ const SUPPORTED_PROXY_SERVICE_KEYS: &[&str] = &[
     "channel.matrix",
     "channel.mattermost",
     "channel.nextcloud_talk",
+    "channel.notion",
+    "channel.napcat",
     "channel.qq",
     "channel.signal",
     "channel.slack",
@@ -38,6 +40,8 @@ const SUPPORTED_PROXY_SERVICE_KEYS: &[&str] = &[
     "tool.browser",
     "tool.composio",
     "tool.http_request",
+    "tool.multimodal",
+    "tool.notion",
     "tool.pushover",
     "memory.embeddings",
     "tunnel.custom",
@@ -2750,6 +2754,8 @@ pub struct ChannelsConfig {
     pub feishu: Option<FeishuConfig>,
     /// DingTalk channel configuration.
     pub dingtalk: Option<DingTalkConfig>,
+    /// Notion database poller channel configuration.
+    pub notion: Option<NotionConfig>,
     /// QQ Official Bot channel configuration.
     pub qq: Option<QQConfig>,
     pub nostr: Option<NostrConfig>,
@@ -2834,6 +2840,12 @@ impl ChannelsConfig {
                 self.dingtalk.is_some(),
             ),
             (
+                Box::new(ConfigWrapper::new(self.notion.as_ref())),
+                self.notion
+                    .as_ref()
+                    .is_some_and(|n| n.enabled && n.database_id.is_some()),
+            ),
+            (
                 Box::new(ConfigWrapper::new(self.qq.as_ref())),
                 self.qq.is_some()
             ),
@@ -2883,6 +2895,7 @@ impl Default for ChannelsConfig {
             lark: None,
             feishu: None,
             dingtalk: None,
+            notion: None,
             qq: None,
             nostr: None,
             clawdtalk: None,
@@ -3019,6 +3032,114 @@ impl ChannelConfig for MattermostConfig {
     }
     fn desc() -> &'static str {
         "connect to your bot"
+    }
+}
+
+/// Notion integration configuration.
+///
+/// When `database_id` is set, a polling channel watches the database for pending
+/// tasks and dispatches them to the agent. When omitted, only the Notion API tool
+/// is registered (search, read pages, query databases on demand).
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct NotionConfig {
+    /// Whether the Notion integration is enabled. Default: `false`.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Notion internal integration token (`ntn_...` or `secret_...`).
+    /// Falls back to `NOTION_API_KEY` env var if not set.
+    pub api_key: Option<String>,
+    /// ID of a Notion database to poll for tasks (optional).
+    /// When set, the database poller channel is started.
+    /// When omitted, only the Notion API tool is available.
+    #[serde(default)]
+    pub database_id: Option<String>,
+    /// Data source ID for database queries (API 2025-09-03).
+    /// In the latest Notion API, databases have a separate `data_source_id` used
+    /// for querying via `/data_sources/{id}/query`. Falls back to `database_id`
+    /// when not set.
+    #[serde(default)]
+    pub data_source_id: Option<String>,
+    /// Polling interval in seconds. Default: `5`.
+    #[serde(default = "default_notion_poll_interval")]
+    pub poll_interval_secs: u64,
+    /// Name of the status property. Default: `"Status"`.
+    #[serde(default = "default_notion_status_property")]
+    pub status_property: String,
+    /// Name of the input/prompt property. Default: `"Input"`.
+    #[serde(default = "default_notion_input_property")]
+    pub input_property: String,
+    /// Name of the result property where agent output is written. Default: `"Result"`.
+    #[serde(default = "default_notion_result_property")]
+    pub result_property: String,
+    /// Value that marks a row as pending. Default: `"Pending"`.
+    #[serde(default = "default_notion_pending")]
+    pub pending_value: String,
+    /// Value set while the agent is processing. Default: `"Running"`.
+    #[serde(default = "default_notion_running")]
+    pub running_value: String,
+    /// Value set when the agent finishes successfully. Default: `"Done"`.
+    #[serde(default = "default_notion_done")]
+    pub done_value: String,
+    /// Value set when the agent encounters an error. Default: `"Error"`.
+    #[serde(default = "default_notion_error")]
+    pub error_value: String,
+    /// Status property type in Notion (`select` or `status`). Default: `"select"`.
+    #[serde(default = "default_notion_status_type")]
+    pub status_type: String,
+    /// On startup, reset rows stuck in "Running" back to "Pending". Default: `true`.
+    #[serde(default = "default_true")]
+    pub recover_stale: bool,
+    /// Notion "Read content" capability. Controls: search, list_pages,
+    /// read_page, get_blocks, query_database, get_page_markdown.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub allow_read: bool,
+    /// Notion "Insert content" capability. Controls: create_page,
+    /// create_data_source, append_blocks. Default: `true`.
+    #[serde(default = "default_true")]
+    pub allow_insert: bool,
+    /// Notion "Update content" capability. Controls: update_page,
+    /// update_block, update_page_markdown, trash_page, delete_block.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub allow_update: bool,
+}
+
+fn default_notion_poll_interval() -> u64 {
+    5
+}
+fn default_notion_status_property() -> String {
+    "Status".into()
+}
+fn default_notion_input_property() -> String {
+    "Input".into()
+}
+fn default_notion_result_property() -> String {
+    "Result".into()
+}
+fn default_notion_pending() -> String {
+    "Pending".into()
+}
+fn default_notion_running() -> String {
+    "Running".into()
+}
+fn default_notion_done() -> String {
+    "Done".into()
+}
+fn default_notion_error() -> String {
+    "Error".into()
+}
+fn default_notion_status_type() -> String {
+    "select".into()
+}
+
+impl ChannelConfig for NotionConfig {
+    fn name() -> &'static str {
+        "Notion"
+    }
+    fn desc() -> &'static str {
+        "poll a Notion database for tasks"
     }
 }
 
@@ -4283,6 +4404,13 @@ impl Config {
                     "config.channels_config.nostr.private_key",
                 )?;
             }
+            if let Some(ref mut notion) = config.channels_config.notion {
+                decrypt_optional_secret(
+                    &store,
+                    &mut notion.api_key,
+                    "config.channels_config.notion.api_key",
+                )?;
+            }
 
             config.apply_env_overrides();
             config.validate()?;
@@ -4567,6 +4695,44 @@ impl Config {
 
         // Proxy (delegate to existing validation)
         self.proxy.validate()?;
+
+        // Notion
+        if let Some(ref notion) = self.channels_config.notion {
+            if notion.enabled {
+                if notion.poll_interval_secs == 0 {
+                    anyhow::bail!(
+                        "channels_config.notion.poll_interval_secs must be greater than 0"
+                    );
+                }
+                if notion.status_property.trim().is_empty() {
+                    anyhow::bail!("channels_config.notion.status_property must not be empty");
+                }
+                if notion.input_property.trim().is_empty() {
+                    anyhow::bail!("channels_config.notion.input_property must not be empty");
+                }
+                if notion.result_property.trim().is_empty() {
+                    anyhow::bail!("channels_config.notion.result_property must not be empty");
+                }
+                if notion.pending_value.trim().is_empty() {
+                    anyhow::bail!("channels_config.notion.pending_value must not be empty");
+                }
+                if notion.running_value.trim().is_empty() {
+                    anyhow::bail!("channels_config.notion.running_value must not be empty");
+                }
+                if notion.done_value.trim().is_empty() {
+                    anyhow::bail!("channels_config.notion.done_value must not be empty");
+                }
+                if notion.error_value.trim().is_empty() {
+                    anyhow::bail!("channels_config.notion.error_value must not be empty");
+                }
+                let st = notion.status_type.to_lowercase();
+                if st != "select" && st != "status" {
+                    anyhow::bail!(
+                        "channels_config.notion.status_type must be 'select' or 'status'"
+                    );
+                }
+            }
+        }
 
         Ok(())
     }
@@ -4931,6 +5097,20 @@ impl Config {
                 &store,
                 &mut ns.private_key,
                 "config.channels_config.nostr.private_key",
+            )?;
+        }
+        if let Some(ref mut notion) = config_to_save.channels_config.notion {
+            encrypt_optional_secret(
+                &store,
+                &mut notion.api_key,
+                "config.channels_config.notion.api_key",
+            )?;
+        }
+        if let Some(ref mut notion) = config_to_save.channels_config.notion {
+            encrypt_optional_secret(
+                &store,
+                &mut notion.api_key,
+                "config.channels_config.notion.api_key",
             )?;
         }
 
@@ -5346,6 +5526,7 @@ default_temperature = 0.7
                 lark: None,
                 feishu: None,
                 dingtalk: None,
+                notion: None,
                 qq: None,
                 nostr: None,
                 clawdtalk: None,
@@ -5912,6 +6093,7 @@ allowed_users = ["@ops:matrix.org"]
             lark: None,
             feishu: None,
             dingtalk: None,
+            notion: None,
             qq: None,
             nostr: None,
             clawdtalk: None,
@@ -6126,6 +6308,7 @@ channel_id = "C123"
             lark: None,
             feishu: None,
             dingtalk: None,
+            notion: None,
             qq: None,
             nostr: None,
             clawdtalk: None,
