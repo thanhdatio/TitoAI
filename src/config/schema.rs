@@ -3583,7 +3583,6 @@ pub fn default_nostr_relays() -> Vec<String> {
     ]
 }
 
-
 // -- Notion --
 
 /// Notion integration configuration (`[notion]`).
