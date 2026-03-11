@@ -53,11 +53,7 @@ impl Microsoft365Tool {
         &self.config.user_id
     }
 
-    async fn dispatch(
-        &self,
-        action: &str,
-        args: &serde_json::Value,
-    ) -> anyhow::Result<ToolResult> {
+    async fn dispatch(&self, action: &str, args: &serde_json::Value) -> anyhow::Result<ToolResult> {
         match action {
             "mail_list" => self.handle_mail_list(args).await,
             "mail_send" => self.handle_mail_send(args).await,
@@ -86,11 +82,11 @@ impl Microsoft365Tool {
 
         let token = self.get_token().await?;
         let folder = args["folder"].as_str();
-        let top = args["top"].as_u64().unwrap_or(DEFAULT_TOP as u64) as u32;
+        let top = u32::try_from(args["top"].as_u64().unwrap_or(u64::from(DEFAULT_TOP)))
+            .unwrap_or(DEFAULT_TOP);
 
         let result =
-            graph_client::mail_list(&self.http_client, &token, self.user_id(), folder, top)
-                .await?;
+            graph_client::mail_list(&self.http_client, &token, self.user_id(), folder, top).await?;
 
         Ok(ToolResult {
             success: true,
@@ -114,16 +110,12 @@ impl Microsoft365Tool {
         let channel_id = args["channel_id"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("channel_id is required"))?;
-        let top = args["top"].as_u64().unwrap_or(DEFAULT_TOP as u64) as u32;
+        let top = u32::try_from(args["top"].as_u64().unwrap_or(u64::from(DEFAULT_TOP)))
+            .unwrap_or(DEFAULT_TOP);
 
-        let result = graph_client::teams_message_list(
-            &self.http_client,
-            &token,
-            team_id,
-            channel_id,
-            top,
-        )
-        .await?;
+        let result =
+            graph_client::teams_message_list(&self.http_client, &token, team_id, channel_id, top)
+                .await?;
 
         Ok(ToolResult {
             success: true,
@@ -147,7 +139,8 @@ impl Microsoft365Tool {
         let end = args["end"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("end datetime is required"))?;
-        let top = args["top"].as_u64().unwrap_or(DEFAULT_TOP as u64) as u32;
+        let top = u32::try_from(args["top"].as_u64().unwrap_or(u64::from(DEFAULT_TOP)))
+            .unwrap_or(DEFAULT_TOP);
 
         let result = graph_client::calendar_events_list(
             &self.http_client,
@@ -198,7 +191,8 @@ impl Microsoft365Tool {
             .ok_or_else(|| anyhow::anyhow!("item_id is required"))?;
         let max_size = args["max_size"]
             .as_u64()
-            .unwrap_or(MAX_ONEDRIVE_DOWNLOAD_SIZE as u64) as usize;
+            .and_then(|v| usize::try_from(v).ok())
+            .unwrap_or(MAX_ONEDRIVE_DOWNLOAD_SIZE);
 
         let bytes = graph_client::onedrive_download(
             &self.http_client,
@@ -235,10 +229,10 @@ impl Microsoft365Tool {
         let query = args["query"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("query is required"))?;
-        let top = args["top"].as_u64().unwrap_or(DEFAULT_TOP as u64) as u32;
+        let top = u32::try_from(args["top"].as_u64().unwrap_or(u64::from(DEFAULT_TOP)))
+            .unwrap_or(DEFAULT_TOP);
 
-        let result =
-            graph_client::sharepoint_search(&self.http_client, &token, query, top).await?;
+        let result = graph_client::sharepoint_search(&self.http_client, &token, query, top).await?;
 
         Ok(ToolResult {
             success: true,
@@ -273,8 +267,15 @@ impl Microsoft365Tool {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("body is required"))?;
 
-        graph_client::mail_send(&self.http_client, &token, self.user_id(), &to, subject, body)
-            .await?;
+        graph_client::mail_send(
+            &self.http_client,
+            &token,
+            self.user_id(),
+            &to,
+            subject,
+            body,
+        )
+        .await?;
 
         Ok(ToolResult {
             success: true,
@@ -372,13 +373,8 @@ impl Microsoft365Tool {
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("event_id is required"))?;
 
-        graph_client::calendar_event_delete(
-            &self.http_client,
-            &token,
-            self.user_id(),
-            event_id,
-        )
-        .await?;
+        graph_client::calendar_event_delete(&self.http_client, &token, self.user_id(), event_id)
+            .await?;
 
         Ok(ToolResult {
             success: true,
@@ -544,9 +540,7 @@ mod tests {
             }
         });
 
-        let actions = schema["properties"]["action"]["enum"]
-            .as_array()
-            .unwrap();
+        let actions = schema["properties"]["action"]["enum"].as_array().unwrap();
         assert_eq!(actions.len(), 10);
         assert!(actions.contains(&json!("mail_list")));
         assert!(actions.contains(&json!("sharepoint_search")));

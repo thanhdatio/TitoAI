@@ -93,9 +93,7 @@ pub async fn teams_message_list(
     channel_id: &str,
     top: u32,
 ) -> anyhow::Result<serde_json::Value> {
-    let url = format!(
-        "{GRAPH_BASE}/teams/{team_id}/channels/{channel_id}/messages"
-    );
+    let url = format!("{GRAPH_BASE}/teams/{team_id}/channels/{channel_id}/messages");
 
     let resp = client
         .get(&url)
@@ -116,9 +114,7 @@ pub async fn teams_message_send(
     channel_id: &str,
     body: &str,
 ) -> anyhow::Result<()> {
-    let url = format!(
-        "{GRAPH_BASE}/teams/{team_id}/channels/{channel_id}/messages"
-    );
+    let url = format!("{GRAPH_BASE}/teams/{team_id}/channels/{channel_id}/messages");
 
     let payload = serde_json::json!({
         "body": {
@@ -223,10 +219,7 @@ pub async fn calendar_event_create(
         .context("ms365: calendar_event_create request failed")?;
 
     let value = handle_json_response(resp, "calendar_event_create").await?;
-    let event_id = value["id"]
-        .as_str()
-        .unwrap_or("unknown")
-        .to_string();
+    let event_id = value["id"].as_str().unwrap_or("unknown").to_string();
     Ok(event_id)
 }
 
@@ -378,10 +371,7 @@ mod tests {
 
     #[test]
     fn user_path_specific_user() {
-        assert_eq!(
-            user_path("user@contoso.com"),
-            "/users/user@contoso.com"
-        );
+        assert_eq!(user_path("user@contoso.com"), "/users/user@contoso.com");
     }
 
     #[test]
@@ -448,9 +438,6 @@ mod tests {
     #[test]
     fn sharepoint_search_url() {
         let url = format!("{GRAPH_BASE}/search/query");
-        assert_eq!(
-            url,
-            "https://graph.microsoft.com/v1.0/search/query"
-        );
+        assert_eq!(url, "https://graph.microsoft.com/v1.0/search/query");
     }
 }

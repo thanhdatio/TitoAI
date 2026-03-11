@@ -40,10 +40,10 @@ pub mod hardware_memory_map;
 pub mod hardware_memory_read;
 pub mod http_request;
 pub mod image_info;
-pub mod microsoft365;
 pub mod memory_forget;
 pub mod memory_recall;
 pub mod memory_store;
+pub mod microsoft365;
 pub mod model_routing_config;
 pub mod pdf_read;
 pub mod proxy_config;
@@ -80,10 +80,10 @@ pub use hardware_memory_map::HardwareMemoryMapTool;
 pub use hardware_memory_read::HardwareMemoryReadTool;
 pub use http_request::HttpRequestTool;
 pub use image_info::ImageInfoTool;
-pub use microsoft365::Microsoft365Tool;
 pub use memory_forget::MemoryForgetTool;
 pub use memory_recall::MemoryRecallTool;
 pub use memory_store::MemoryStoreTool;
+pub use microsoft365::Microsoft365Tool;
 pub use model_routing_config::ModelRoutingConfigTool;
 pub use pdf_read::PdfReadTool;
 pub use proxy_config::ProxyConfigTool;
@@ -339,11 +339,7 @@ pub fn all_tools_with_runtime(
                 auth_flow: ms_cfg.auth_flow.clone(),
                 scopes: ms_cfg.scopes.clone(),
                 token_cache_encrypted: ms_cfg.token_cache_encrypted,
-                user_id: ms_cfg
-                    .user_id
-                    .as_deref()
-                    .unwrap_or("me")
-                    .to_string(),
+                user_id: ms_cfg.user_id.as_deref().unwrap_or("me").to_string(),
             };
             tool_arcs.push(Arc::new(Microsoft365Tool::new(
                 resolved,

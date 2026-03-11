@@ -61,17 +61,12 @@ impl TokenCache {
         Ok(token)
     }
 
-    async fn acquire_token(
-        &self,
-        client: &reqwest::Client,
-    ) -> anyhow::Result<CachedTokenState> {
+    async fn acquire_token(&self, client: &reqwest::Client) -> anyhow::Result<CachedTokenState> {
         // Try refresh first if we have a refresh token.
         // Clone the token out so the RwLock guard is dropped before the await.
         let refresh_token_copy = {
             let guard = self.inner.read();
-            guard
-                .as_ref()
-                .and_then(|state| state.refresh_token.clone())
+            guard.as_ref().and_then(|state| state.refresh_token.clone())
         };
         if let Some(refresh_tok) = refresh_token_copy {
             match self.refresh_token(client, &refresh_tok).await {
@@ -136,10 +131,7 @@ impl TokenCache {
         })
     }
 
-    async fn device_code_flow(
-        &self,
-        client: &reqwest::Client,
-    ) -> anyhow::Result<CachedTokenState> {
+    async fn device_code_flow(&self, client: &reqwest::Client) -> anyhow::Result<CachedTokenState> {
         let device_code_url = format!(
             "https://login.microsoftonline.com/{}/oauth2/v2.0/devicecode",
             self.config.tenant_id
@@ -167,10 +159,7 @@ impl TokenCache {
             .await
             .context("ms365: failed to parse device code response")?;
 
-        tracing::info!(
-            "ms365: device code auth required. {}",
-            device_resp.message
-        );
+        tracing::info!("ms365: device code auth required. {}", device_resp.message);
 
         let token_url = format!(
             "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
@@ -178,7 +167,10 @@ impl TokenCache {
         );
 
         let interval = device_resp.interval.max(5);
-        let max_polls = (device_resp.expires_in / interval as i64).max(1) as u32;
+        let max_polls = u32::try_from(
+            (device_resp.expires_in / i64::try_from(interval).unwrap_or(i64::MAX)).max(1),
+        )
+        .unwrap_or(u32::MAX);
 
         for _ in 0..max_polls {
             tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
