@@ -3062,8 +3062,11 @@ pub struct MatrixConfig {
     /// Matrix homeserver URL (e.g. `"https://matrix.org"`).
     pub homeserver: String,
     /// Matrix access token for the bot account.
-    pub access_token: String,
+    /// Optional when `password` is set (bot will login and obtain a token automatically).
+    #[serde(default)]
+    pub access_token: Option<String>,
     /// Optional Matrix user ID (e.g. `"@bot:matrix.org"`).
+    /// Required when using password-based login without access_token.
     #[serde(default)]
     pub user_id: Option<String>,
     /// Optional Matrix device ID.
@@ -3073,6 +3076,11 @@ pub struct MatrixConfig {
     pub room_id: String,
     /// Allowed Matrix user IDs. Empty = deny all.
     pub allowed_users: Vec<String>,
+    /// Optional Matrix account password. When set, the bot will:
+    /// - Login automatically if no access_token is configured (simplest setup).
+    /// - Bootstrap cross-signing so the device is marked as "verified by its owner".
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 impl ChannelConfig for MatrixConfig {
@@ -4276,6 +4284,19 @@ impl Config {
                 decrypt_optional_secret(&store, &mut google.api_key, "config.tts.google.api_key")?;
             }
 
+            if let Some(ref mut matrix) = config.channels_config.matrix {
+                decrypt_optional_secret(
+                    &store,
+                    &mut matrix.access_token,
+                    "config.channels_config.matrix.access_token",
+                )?;
+                decrypt_optional_secret(
+                    &store,
+                    &mut matrix.password,
+                    "config.channels_config.matrix.password",
+                )?;
+            }
+
             if let Some(ref mut ns) = config.channels_config.nostr {
                 decrypt_secret(
                     &store,
@@ -4561,6 +4582,28 @@ impl Config {
             if !has_ollama_cloud_credential(self.api_key.as_deref()) {
                 anyhow::bail!(
                     "default_model uses ':cloud' with provider 'ollama', but no API key is configured. Set api_key or OLLAMA_API_KEY."
+                );
+            }
+        }
+
+        // Matrix: password-only login requires user_id
+        if let Some(ref matrix) = self.channels_config.matrix {
+            let has_access_token = matrix
+                .access_token
+                .as_deref()
+                .is_some_and(|v| !v.trim().is_empty());
+            let has_password = matrix
+                .password
+                .as_deref()
+                .is_some_and(|v| !v.trim().is_empty());
+            let has_user_id = matrix
+                .user_id
+                .as_deref()
+                .is_some_and(|v| !v.trim().is_empty());
+
+            if has_password && !has_access_token && !has_user_id {
+                anyhow::bail!(
+                    "channels_config.matrix.user_id is required when password is set and access_token is omitted"
                 );
             }
         }
@@ -4924,6 +4967,19 @@ impl Config {
         }
         if let Some(ref mut google) = config_to_save.tts.google {
             encrypt_optional_secret(&store, &mut google.api_key, "config.tts.google.api_key")?;
+        }
+
+        if let Some(ref mut matrix) = config_to_save.channels_config.matrix {
+            encrypt_optional_secret(
+                &store,
+                &mut matrix.access_token,
+                "config.channels_config.matrix.access_token",
+            )?;
+            encrypt_optional_secret(
+                &store,
+                &mut matrix.password,
+                "config.channels_config.matrix.password",
+            )?;
         }
 
         if let Some(ref mut ns) = config_to_save.channels_config.nostr {
@@ -5787,16 +5843,17 @@ tool_dispatcher = "xml"
     async fn matrix_config_serde() {
         let mc = MatrixConfig {
             homeserver: "https://matrix.org".into(),
-            access_token: "syt_token_abc".into(),
+            access_token: Some("syt_token_abc".to_string()),
             user_id: Some("@bot:matrix.org".into()),
             device_id: Some("DEVICE123".into()),
             room_id: "!room123:matrix.org".into(),
             allowed_users: vec!["@user:matrix.org".into()],
+            password: None,
         };
         let json = serde_json::to_string(&mc).unwrap();
         let parsed: MatrixConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.homeserver, "https://matrix.org");
-        assert_eq!(parsed.access_token, "syt_token_abc");
+        assert_eq!(parsed.access_token.as_deref(), Some("syt_token_abc"));
         assert_eq!(parsed.user_id.as_deref(), Some("@bot:matrix.org"));
         assert_eq!(parsed.device_id.as_deref(), Some("DEVICE123"));
         assert_eq!(parsed.room_id, "!room123:matrix.org");
@@ -5807,11 +5864,12 @@ tool_dispatcher = "xml"
     async fn matrix_config_toml_roundtrip() {
         let mc = MatrixConfig {
             homeserver: "https://synapse.local:8448".into(),
-            access_token: "tok".into(),
+            access_token: Some("tok".to_string()),
             user_id: None,
             device_id: None,
             room_id: "!abc:synapse.local".into(),
             allowed_users: vec!["@admin:synapse.local".into(), "*".into()],
+            password: None,
         };
         let toml_str = toml::to_string(&mc).unwrap();
         let parsed: MatrixConfig = toml::from_str(&toml_str).unwrap();
@@ -5896,11 +5954,12 @@ allowed_users = ["@ops:matrix.org"]
             }),
             matrix: Some(MatrixConfig {
                 homeserver: "https://m.org".into(),
-                access_token: "tok".into(),
+                access_token: Some("tok".to_string()),
                 user_id: None,
                 device_id: None,
                 room_id: "!r:m".into(),
                 allowed_users: vec!["@u:m".into()],
+                password: None,
             }),
             signal: None,
             whatsapp: None,
