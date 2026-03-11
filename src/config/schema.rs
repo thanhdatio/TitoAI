@@ -223,7 +223,6 @@ pub struct Config {
     pub workspace: WorkspaceConfig,
 }
 
-
 /// Multi-client workspace isolation configuration.
 ///
 /// When enabled, each client engagement gets an isolated workspace with
