@@ -227,6 +227,7 @@ struct ChannelRuntimeContext {
     multimodal: crate::config::MultimodalConfig,
     hooks: Option<Arc<crate::hooks::HookRunner>>,
     non_cli_excluded_tools: Arc<Vec<String>>,
+    model_routes: Arc<Vec<crate::config::ModelRouteConfig>>,
 }
 
 #[derive(Clone)]
@@ -506,7 +507,7 @@ fn normalize_cached_channel_turns(turns: Vec<ChatMessage>) -> Vec<ChatMessage> {
 }
 
 fn supports_runtime_model_switch(channel_name: &str) -> bool {
-    matches!(channel_name, "telegram" | "discord")
+    matches!(channel_name, "telegram" | "discord" | "matrix")
 }
 
 fn parse_runtime_command(channel_name: &str, content: &str) -> Option<ChannelRuntimeCommand> {
@@ -987,14 +988,29 @@ async fn create_resilient_provider_nonblocking(
     .context("failed to join provider initialization task")?
 }
 
-fn build_models_help_response(current: &ChannelRouteSelection, workspace_dir: &Path) -> String {
+fn build_models_help_response(
+    current: &ChannelRouteSelection,
+    workspace_dir: &Path,
+    model_routes: &[crate::config::ModelRouteConfig],
+) -> String {
     let mut response = String::new();
     let _ = writeln!(
         response,
         "Current provider: `{}`\nCurrent model: `{}`",
         current.provider, current.model
     );
-    response.push_str("\nSwitch model with `/model <model-id>`.\n");
+    response.push_str("\nSwitch model with `/model <model-id>` or `/model <hint>`.\n");
+
+    if !model_routes.is_empty() {
+        response.push_str("\nConfigured model routes:\n");
+        for route in model_routes {
+            let _ = writeln!(
+                response,
+                "  `{}` → {} ({})",
+                route.hint, route.model, route.provider
+            );
+        }
+    }
 
     let cached_models = load_cached_model_preview(workspace_dir, &current.provider);
     if cached_models.is_empty() {
@@ -1067,7 +1083,6 @@ async fn handle_runtime_command_if_needed(
                         if provider_name != current.provider {
                             current.provider = provider_name.clone();
                             set_route_selection(ctx, &sender_key, current.clone());
-                            clear_sender_history(ctx, &sender_key);
                         }
 
                         format!(
@@ -1088,20 +1103,27 @@ async fn handle_runtime_command_if_needed(
             }
         }
         ChannelRuntimeCommand::ShowModel => {
-            build_models_help_response(&current, ctx.workspace_dir.as_path())
+            build_models_help_response(&current, ctx.workspace_dir.as_path(), &ctx.model_routes)
         }
         ChannelRuntimeCommand::SetModel(raw_model) => {
             let model = raw_model.trim().trim_matches('`').to_string();
             if model.is_empty() {
                 "Model ID cannot be empty. Use `/model <model-id>`.".to_string()
             } else {
-                current.model = model.clone();
+                // Resolve provider+model from model_routes (match by model name or hint)
+                if let Some(route) = ctx.model_routes.iter().find(|r| {
+                    r.model.eq_ignore_ascii_case(&model) || r.hint.eq_ignore_ascii_case(&model)
+                }) {
+                    current.provider = route.provider.clone();
+                    current.model = route.model.clone();
+                } else {
+                    current.model = model.clone();
+                }
                 set_route_selection(ctx, &sender_key, current.clone());
-                clear_sender_history(ctx, &sender_key);
 
                 format!(
-                    "Model switched to `{model}` for provider `{}` in this sender session.",
-                    current.provider
+                    "Model switched to `{}` (provider: `{}`). Context preserved.",
+                    current.model, current.provider
                 )
             }
         }
@@ -3134,8 +3156,9 @@ pub async fn start_channels(config: Config) -> Result<()> {
     ));
     let model = resolved_default_model(&config);
     let temperature = config.default_temperature;
-    let mem: Arc<dyn Memory> = Arc::from(memory::create_memory_with_storage(
+    let mem: Arc<dyn Memory> = Arc::from(memory::create_memory_with_storage_and_routes(
         &config.memory,
+        &config.embedding_routes,
         Some(&config.storage.provider.config),
         &config.workspace_dir,
         config.api_key.as_deref(),
@@ -3381,6 +3404,7 @@ pub async fn start_channels(config: Config) -> Result<()> {
             None
         },
         non_cli_excluded_tools: Arc::new(config.autonomy.non_cli_excluded_tools.clone()),
+        model_routes: Arc::new(config.model_routes.clone()),
     });
 
     run_message_dispatch_loop(rx, runtime_ctx, max_in_flight_messages).await;
@@ -3594,6 +3618,7 @@ mod tests {
             workspace_dir: Arc::new(std::env::temp_dir()),
             message_timeout_secs: CHANNEL_MESSAGE_TIMEOUT_SECS,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         };
 
         assert!(compact_sender_history(&ctx, &sender));
@@ -3643,6 +3668,7 @@ mod tests {
             workspace_dir: Arc::new(std::env::temp_dir()),
             message_timeout_secs: CHANNEL_MESSAGE_TIMEOUT_SECS,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         };
 
         append_sender_turn(&ctx, &sender, ChatMessage::user("hello"));
@@ -3695,6 +3721,7 @@ mod tests {
             workspace_dir: Arc::new(std::env::temp_dir()),
             message_timeout_secs: CHANNEL_MESSAGE_TIMEOUT_SECS,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         };
 
         assert!(rollback_orphan_user_turn(&ctx, &sender, "pending"));
@@ -4170,6 +4197,7 @@ BTC is currently around $65,000 based on latest tool output."#
             non_cli_excluded_tools: Arc::new(Vec::new()),
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4229,6 +4257,7 @@ BTC is currently around $65,000 based on latest tool output."#
             non_cli_excluded_tools: Arc::new(Vec::new()),
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4302,6 +4331,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4361,6 +4391,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4429,6 +4460,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4518,6 +4550,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4589,6 +4622,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4675,6 +4709,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4746,6 +4781,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4806,6 +4842,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -4977,6 +5014,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         let (tx, rx) = tokio::sync::mpsc::channel::<traits::ChannelMessage>(4);
@@ -5057,6 +5095,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         let (tx, rx) = tokio::sync::mpsc::channel::<traits::ChannelMessage>(8);
@@ -5149,6 +5188,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         let (tx, rx) = tokio::sync::mpsc::channel::<traits::ChannelMessage>(8);
@@ -5223,6 +5263,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -5282,6 +5323,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -5798,6 +5840,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -5883,6 +5926,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -5968,6 +6012,7 @@ BTC is currently around $65,000 based on latest tool output."#
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
@@ -6517,6 +6562,7 @@ This is an example JSON object for profile settings."#;
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         // Simulate a photo attachment message with [IMAGE:] marker.
@@ -6583,6 +6629,7 @@ This is an example JSON object for profile settings."#;
             multimodal: crate::config::MultimodalConfig::default(),
             hooks: None,
             non_cli_excluded_tools: Arc::new(Vec::new()),
+            model_routes: Arc::new(Vec::new()),
         });
 
         process_channel_message(
