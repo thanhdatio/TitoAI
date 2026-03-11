@@ -3375,7 +3375,6 @@ impl Default for EstopConfig {
     }
 }
 
-
 /// Compliance and audit automation configuration for regulated industries.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ComplianceConfig {
@@ -4495,9 +4494,7 @@ impl Config {
                 );
             }
             if self.security.compliance.audit_retention_days == 0 {
-                anyhow::bail!(
-                    "security.compliance.audit_retention_days must be greater than 0"
-                );
+                anyhow::bail!("security.compliance.audit_retention_days must be greater than 0");
             }
         }
 
