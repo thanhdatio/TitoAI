@@ -3541,7 +3541,6 @@ impl Default for EstopConfig {
     }
 }
 
-
 /// Nevis IAM integration configuration.
 ///
 /// When `enabled` is true, ZeroClaw validates incoming requests against a Nevis
@@ -4706,7 +4705,12 @@ impl Config {
                     self.security.nevis.instance_url
                 );
             }
-            let tv = self.security.nevis.token_validation.trim().to_ascii_lowercase();
+            let tv = self
+                .security
+                .nevis
+                .token_validation
+                .trim()
+                .to_ascii_lowercase();
             if tv != "local" && tv != "remote" {
                 anyhow::bail!(
                     "security.nevis.token_validation must be 'local' or 'remote', got '{}'",
