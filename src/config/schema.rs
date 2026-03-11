@@ -4345,11 +4345,7 @@ impl Config {
 
             // Decrypt TTS provider API keys
             if let Some(ref mut openai) = config.tts.openai {
-                decrypt_optional_secret(
-                    &store,
-                    &mut openai.api_key,
-                    "config.tts.openai.api_key",
-                )?;
+                decrypt_optional_secret(&store, &mut openai.api_key, "config.tts.openai.api_key")?;
             }
             if let Some(ref mut elevenlabs) = config.tts.elevenlabs {
                 decrypt_optional_secret(
@@ -4359,11 +4355,7 @@ impl Config {
                 )?;
             }
             if let Some(ref mut google) = config.tts.google {
-                decrypt_optional_secret(
-                    &store,
-                    &mut google.api_key,
-                    "config.tts.google.api_key",
-                )?;
+                decrypt_optional_secret(&store, &mut google.api_key, "config.tts.google.api_key")?;
             }
 
             if let Some(ref mut ns) = config.channels_config.nostr {
@@ -5040,11 +5032,7 @@ impl Config {
 
         // Encrypt TTS provider API keys
         if let Some(ref mut openai) = config_to_save.tts.openai {
-            encrypt_optional_secret(
-                &store,
-                &mut openai.api_key,
-                "config.tts.openai.api_key",
-            )?;
+            encrypt_optional_secret(&store, &mut openai.api_key, "config.tts.openai.api_key")?;
         }
         if let Some(ref mut elevenlabs) = config_to_save.tts.elevenlabs {
             encrypt_optional_secret(
@@ -5054,11 +5042,7 @@ impl Config {
             )?;
         }
         if let Some(ref mut google) = config_to_save.tts.google {
-            encrypt_optional_secret(
-                &store,
-                &mut google.api_key,
-                "config.tts.google.api_key",
-            )?;
+            encrypt_optional_secret(&store, &mut google.api_key, "config.tts.google.api_key")?;
         }
 
         if let Some(ref mut ns) = config_to_save.channels_config.nostr {
