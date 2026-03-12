@@ -17,6 +17,7 @@ use matrix_sdk::{
 use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
