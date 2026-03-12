@@ -25,7 +25,8 @@ impl Tool for GlobSearchTool {
 
     fn description(&self) -> &str {
         "Search for files matching a glob pattern within the workspace. \
-         Returns a sorted list of matching file paths relative to the workspace root. \
+         Returns a sorted list of matching file paths relative to the workspace root when possible, \
+         or canonical absolute paths for matches under allowed_roots. \
          Examples: '**/*.rs' (all Rust files), 'src/**/mod.rs' (all mod.rs in src)."
     }
 
@@ -57,21 +58,20 @@ impl Tool for GlobSearchTool {
             });
         }
 
-        // Security: reject absolute paths
-        if pattern.starts_with('/') || pattern.starts_with('\\') {
-            return Ok(ToolResult {
-                success: false,
-                output: String::new(),
-                error: Some("Absolute paths are not allowed. Use a relative glob pattern.".into()),
-            });
-        }
-
         // Security: reject path traversal
         if pattern.contains("../") || pattern.contains("..\\") || pattern == ".." {
             return Ok(ToolResult {
                 success: false,
                 output: String::new(),
                 error: Some("Path traversal ('..') is not allowed in glob patterns.".into()),
+            });
+        }
+
+        if !self.security.is_path_allowed(pattern) {
+            return Ok(ToolResult {
+                success: false,
+                output: String::new(),
+                error: Some(format!("Path not allowed by security policy: {pattern}")),
             });
         }
 
@@ -84,9 +84,25 @@ impl Tool for GlobSearchTool {
             });
         }
 
-        // Build full pattern anchored to workspace
+        // Build full pattern anchored to workspace unless the user supplied
+        // an absolute / `~/...` pattern that is permitted by policy.
         let workspace = &self.security.workspace_dir;
-        let full_pattern = workspace.join(pattern).to_string_lossy().to_string();
+        let full_pattern = {
+            let resolved = self.security.resolve_user_path(pattern);
+            if std::path::Path::new(pattern).is_absolute()
+                || pattern == "~"
+                || pattern.starts_with("~/")
+            {
+                resolved.to_string_lossy().to_string()
+            } else {
+                let workspace_prefix = glob::Pattern::escape(workspace.to_string_lossy().as_ref());
+                if workspace_prefix.ends_with(std::path::MAIN_SEPARATOR) {
+                    format!("{workspace_prefix}{pattern}")
+                } else {
+                    format!("{workspace_prefix}{}{pattern}", std::path::MAIN_SEPARATOR)
+                }
+            }
+        };
 
         let entries = match glob::glob(&full_pattern) {
             Ok(paths) => paths,
@@ -134,9 +150,12 @@ impl Tool for GlobSearchTool {
                 continue;
             }
 
-            // Convert to workspace-relative path
+            // Convert to workspace-relative path when possible, otherwise keep
+            // the canonical absolute path (e.g. results from allowed_roots).
             if let Ok(rel) = resolved.strip_prefix(&workspace_canon) {
                 results.push(rel.to_string_lossy().to_string());
+            } else {
+                results.push(resolved.to_string_lossy().to_string());
             }
 
             if results.len() >= MAX_RESULTS {
@@ -148,7 +167,7 @@ impl Tool for GlobSearchTool {
         results.sort();
 
         let output = if results.is_empty() {
-            format!("No files matching pattern '{pattern}' found in workspace.")
+            format!("No files matching pattern '{pattern}' found in workspace or allowed roots.")
         } else {
             use std::fmt::Write;
             let mut buf = results.join("\n");
@@ -278,12 +297,95 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn glob_search_rejects_absolute_path() {
+    async fn glob_search_rejects_absolute_path_outside_allowed_roots() {
         let tool = GlobSearchTool::new(test_security(std::env::temp_dir()));
         let result = tool.execute(json!({"pattern": "/etc/**/*"})).await.unwrap();
 
         assert!(!result.success);
-        assert!(result.error.as_ref().unwrap().contains("Absolute paths"));
+        assert!(result.error.as_ref().unwrap().contains("not allowed"));
+    }
+
+    #[tokio::test]
+    async fn glob_search_allows_absolute_pattern_inside_allowed_roots() {
+        let root = TempDir::new().unwrap();
+        let workspace = root.path().join("workspace");
+        let outside = root.path().join("outside");
+        let outside_match = outside.join("a.md");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(&outside_match, "alpha").unwrap();
+        std::fs::write(outside.join("b.txt"), "beta").unwrap();
+
+        let security = Arc::new(SecurityPolicy {
+            autonomy: AutonomyLevel::Supervised,
+            workspace_dir: workspace,
+            workspace_only: true,
+            allowed_roots: vec![outside.clone()],
+            forbidden_paths: vec![],
+            ..SecurityPolicy::default()
+        });
+        let tool = GlobSearchTool::new(security);
+        let pattern = outside.join("*.md").to_string_lossy().to_string();
+        let result = tool.execute(json!({"pattern": pattern})).await.unwrap();
+        let outside_match = std::fs::canonicalize(outside_match).unwrap();
+
+        assert!(result.success);
+        assert!(result
+            .output
+            .contains(outside_match.to_string_lossy().as_ref()));
+    }
+
+    #[tokio::test]
+    async fn glob_search_escapes_workspace_prefix() {
+        let root = TempDir::new().unwrap();
+        let workspace = root.path().join("workspace[glob]");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(workspace.join("hello.txt"), "content").unwrap();
+
+        let tool = GlobSearchTool::new(test_security(workspace));
+        let result = tool.execute(json!({"pattern": "*.txt"})).await.unwrap();
+
+        assert!(result.success);
+        assert!(result.output.contains("hello.txt"));
+    }
+
+    #[tokio::test]
+    async fn glob_search_allows_tilde_pattern_inside_allowed_roots() {
+        let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) else {
+            return;
+        };
+
+        let root = home.join("zeroclaw_test_glob_search_allowed_roots_tilde");
+        let workspace = root.join("workspace");
+        let outside = root.join("projects_root");
+        let outside_match = outside.join("notes.md");
+
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(&outside_match, "tilde-allowed").unwrap();
+
+        let security = Arc::new(SecurityPolicy {
+            autonomy: AutonomyLevel::Supervised,
+            workspace_dir: workspace,
+            workspace_only: true,
+            allowed_roots: vec![outside.clone()],
+            forbidden_paths: vec![],
+            ..SecurityPolicy::default()
+        });
+        let tool = GlobSearchTool::new(security);
+        let result = tool
+            .execute(json!({"pattern": "~/zeroclaw_test_glob_search_allowed_roots_tilde/projects_root/*.md"}))
+            .await
+            .unwrap();
+        let outside_match = std::fs::canonicalize(outside_match).unwrap();
+
+        assert!(result.success);
+        assert!(result
+            .output
+            .contains(outside_match.to_string_lossy().as_ref()));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
