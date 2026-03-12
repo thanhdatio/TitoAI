@@ -3110,8 +3110,8 @@ pub async fn run(
             &[],
         )
         .await?;
-        final_output = response.clone();
-        println!("{response}");
+        final_output = response;
+        println!("{final_output}");
         observer.record_event(&ObserverEvent::TurnComplete);
     } else {
         println!("🦀 ZeroClaw Interactive Mode");
