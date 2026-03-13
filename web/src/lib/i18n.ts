@@ -376,16 +376,16 @@ const translations: Record<Locale, Record<string, string>> = {
 
   vi: {
     // Navigation
-    'nav.dashboard': 'Dashboard',
-    'nav.agent': 'Agent',
-    'nav.tools': 'Tools',
-    'nav.cron': 'Scheduled Jobs',
-    'nav.integrations': 'Integrations',
-    'nav.memory': 'Memory',
-    'nav.config': 'Configuration',
-    'nav.cost': 'Cost Tracker',
-    'nav.logs': 'Logs',
-    'nav.doctor': 'Doctor',
+    'nav.dashboard': 'Tổng quan',
+    'nav.agent': 'Tác nhân AI',
+    'nav.tools': 'Công cụ',
+    'nav.cron': 'Công việc định kỳ',
+    'nav.integrations': 'Tích hợp',
+    'nav.memory': 'Bộ nhớ',
+    'nav.config': 'Cấu hình',
+    'nav.cost': 'Theo dõi chi phí',
+    'nav.logs': 'Nhật ký',
+    'nav.doctor': 'Chẩn đoán',
 
     // Dashboard
     'dashboard.title': 'Dashboard',
@@ -782,7 +782,6 @@ export function tLocale(key: string, locale: Locale): string {
 function normalizeLocale(locale: string | undefined): Locale {
   const lowered = locale?.toLowerCase();
   if (lowered?.startsWith('tr')) return 'tr';
-  if (lowered?.startsWith('vi')) return 'vi';
   if (lowered?.startsWith('vi')) return 'vi';
   return 'en';
 }
