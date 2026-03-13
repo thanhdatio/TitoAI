@@ -1,6 +1,6 @@
-# Tài liệu ZeroClaw (Tiếng Việt)
+# Tài liệu Tito AI (Tiếng Việt)
 
-Đây là trang chủ tiếng Việt của hệ thống tài liệu.
+Đây là trang chủ tiếng Việt của hệ thống tài liệu Tito AI.
 
 Đồng bộ lần cuối: **2026-02-21**.
 
