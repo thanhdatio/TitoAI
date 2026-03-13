@@ -5,7 +5,7 @@ import { getStatus } from './api';
 // Translation dictionaries
 // ---------------------------------------------------------------------------
 
-export type Locale = 'en' | 'tr' | 'zh-CN';
+export type Locale = 'en' | 'tr' | 'zh-CN' | 'vi';
 
 const translations: Record<Locale, Record<string, string>> = {
   en: {
@@ -374,6 +374,189 @@ const translations: Record<Locale, Record<string, string>> = {
     'health.updated_at': 'Son Guncelleme',
   },
 
+  vi: {
+    // Navigation
+    'nav.dashboard': 'Dashboard',
+    'nav.agent': 'Agent',
+    'nav.tools': 'Tools',
+    'nav.cron': 'Scheduled Jobs',
+    'nav.integrations': 'Integrations',
+    'nav.memory': 'Memory',
+    'nav.config': 'Configuration',
+    'nav.cost': 'Cost Tracker',
+    'nav.logs': 'Logs',
+    'nav.doctor': 'Doctor',
+
+    // Dashboard
+    'dashboard.title': 'Dashboard',
+    'dashboard.provider': 'Provider',
+    'dashboard.model': 'Model',
+    'dashboard.uptime': 'Uptime',
+    'dashboard.temperature': 'Temperature',
+    'dashboard.gateway_port': 'Gateway Port',
+    'dashboard.locale': 'Locale',
+    'dashboard.memory_backend': 'Memory Backend',
+    'dashboard.paired': 'Paired',
+    'dashboard.channels': 'Channels',
+    'dashboard.health': 'Health',
+    'dashboard.status': 'Status',
+    'dashboard.overview': 'Overview',
+    'dashboard.system_info': 'System Information',
+    'dashboard.quick_actions': 'Quick Actions',
+
+    // Agent / Chat
+    'agent.title': 'Agent Chat',
+    'agent.send': 'Send',
+    'agent.placeholder': 'Type a message...',
+    'agent.connecting': 'Connecting...',
+    'agent.connected': 'Connected',
+    'agent.disconnected': 'Disconnected',
+    'agent.reconnecting': 'Reconnecting...',
+    'agent.thinking': 'Thinking...',
+    'agent.tool_call': 'Tool Call',
+    'agent.tool_result': 'Tool Result',
+
+    // Tools
+    'tools.title': 'Available Tools',
+    'tools.name': 'Name',
+    'tools.description': 'Description',
+    'tools.parameters': 'Parameters',
+    'tools.search': 'Search tools...',
+    'tools.empty': 'No tools available.',
+    'tools.count': 'Total tools',
+
+    // Cron
+    'cron.title': 'Scheduled Jobs',
+    'cron.add': 'Add Job',
+    'cron.delete': 'Delete',
+    'cron.enable': 'Enable',
+    'cron.disable': 'Disable',
+    'cron.name': 'Name',
+    'cron.command': 'Command',
+    'cron.schedule': 'Schedule',
+    'cron.next_run': 'Next Run',
+    'cron.last_run': 'Last Run',
+    'cron.last_status': 'Last Status',
+    'cron.enabled': 'Enabled',
+    'cron.empty': 'No scheduled jobs.',
+    'cron.confirm_delete': 'Are you sure you want to delete this job?',
+
+    // Integrations
+    'integrations.title': 'Integrations',
+    'integrations.available': 'Available',
+    'integrations.active': 'Active',
+    'integrations.coming_soon': 'Coming Soon',
+    'integrations.category': 'Category',
+    'integrations.status': 'Status',
+    'integrations.search': 'Search integrations...',
+    'integrations.empty': 'No integrations found.',
+    'integrations.activate': 'Activate',
+    'integrations.deactivate': 'Deactivate',
+
+    // Memory
+    'memory.title': 'Memory Store',
+    'memory.search': 'Search memory...',
+    'memory.add': 'Store Memory',
+    'memory.delete': 'Delete',
+    'memory.key': 'Key',
+    'memory.content': 'Content',
+    'memory.category': 'Category',
+    'memory.timestamp': 'Timestamp',
+    'memory.session': 'Session',
+    'memory.score': 'Score',
+    'memory.empty': 'No memory entries found.',
+    'memory.confirm_delete': 'Are you sure you want to delete this memory entry?',
+    'memory.all_categories': 'All Categories',
+
+    // Config
+    'config.title': 'Configuration',
+    'config.save': 'Save',
+    'config.reset': 'Reset',
+    'config.saved': 'Configuration saved successfully.',
+    'config.error': 'Failed to save configuration.',
+    'config.loading': 'Loading configuration...',
+    'config.editor_placeholder': 'TOML configuration...',
+
+    // Cost
+    'cost.title': 'Cost Tracker',
+    'cost.session': 'Session Cost',
+    'cost.daily': 'Daily Cost',
+    'cost.monthly': 'Monthly Cost',
+    'cost.total_tokens': 'Total Tokens',
+    'cost.request_count': 'Requests',
+    'cost.by_model': 'Cost by Model',
+    'cost.model': 'Model',
+    'cost.tokens': 'Tokens',
+    'cost.requests': 'Requests',
+    'cost.usd': 'Cost (USD)',
+
+    // Logs
+    'logs.title': 'Live Logs',
+    'logs.clear': 'Clear',
+    'logs.pause': 'Pause',
+    'logs.resume': 'Resume',
+    'logs.filter': 'Filter logs...',
+    'logs.empty': 'No log entries.',
+    'logs.connected': 'Connected to event stream.',
+    'logs.disconnected': 'Disconnected from event stream.',
+
+    // Doctor
+    'doctor.title': 'System Diagnostics',
+    'doctor.run': 'Run Diagnostics',
+    'doctor.running': 'Running diagnostics...',
+    'doctor.ok': 'OK',
+    'doctor.warn': 'Warning',
+    'doctor.error': 'Error',
+    'doctor.severity': 'Severity',
+    'doctor.category': 'Category',
+    'doctor.message': 'Message',
+    'doctor.empty': 'No diagnostics have been run yet.',
+    'doctor.summary': 'Diagnostic Summary',
+
+    // Auth / Pairing
+    'auth.pair': 'Pair Device',
+    'auth.pairing_code': 'Pairing Code',
+    'auth.pair_button': 'Pair',
+    'auth.logout': 'Logout',
+    'auth.pairing_success': 'Pairing successful!',
+    'auth.pairing_failed': 'Pairing failed. Please try again.',
+    'auth.enter_code': 'Enter your pairing code to connect to the agent.',
+
+    // Common
+    'common.loading': 'Loading...',
+    'common.error': 'An error occurred.',
+    'common.retry': 'Retry',
+    'common.cancel': 'Cancel',
+    'common.confirm': 'Confirm',
+    'common.save': 'Save',
+    'common.delete': 'Delete',
+    'common.edit': 'Edit',
+    'common.close': 'Close',
+    'common.yes': 'Yes',
+    'common.no': 'No',
+    'common.search': 'Search...',
+    'common.no_data': 'No data available.',
+    'common.refresh': 'Refresh',
+    'common.back': 'Back',
+    'common.actions': 'Actions',
+    'common.name': 'Name',
+    'common.description': 'Description',
+    'common.status': 'Status',
+    'common.created': 'Created',
+    'common.updated': 'Updated',
+
+    // Health
+    'health.title': 'System Health',
+    'health.component': 'Component',
+    'health.status': 'Status',
+    'health.last_ok': 'Last OK',
+    'health.last_error': 'Last Error',
+    'health.restart_count': 'Restarts',
+    'health.pid': 'Process ID',
+    'health.uptime': 'Uptime',
+    'health.updated_at': 'Last Updated',
+  },
+
   'zh-CN': {
     // Navigation
     'nav.dashboard': '仪表盘',
@@ -599,7 +782,8 @@ export function tLocale(key: string, locale: Locale): string {
 function normalizeLocale(locale: string | undefined): Locale {
   const lowered = locale?.toLowerCase();
   if (lowered?.startsWith('tr')) return 'tr';
-  if (lowered === 'zh' || lowered?.startsWith('zh-')) return 'zh-CN';
+  if (lowered?.startsWith('vi')) return 'vi';
+  if (lowered?.startsWith('vi')) return 'vi';
   return 'en';
 }
 
